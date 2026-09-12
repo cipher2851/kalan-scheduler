@@ -93,6 +93,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         return jobInstances[id]?.getExecutionCount() ?: 0
     }
 
+    fun getLastExecutionTime(id: String): Instant? {
+        return jobInstances[id]?.getLastExecutionTime()
+    }
+
     fun shutdown() {
         running.set(false)
         scheduler.shutdownNow()
@@ -101,6 +105,8 @@ class KalanScheduler(corePoolSize: Int = 1) {
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
+
+    fun getActiveJobIds(): Set<String> = activeJobs.keys.toSet()
 
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
