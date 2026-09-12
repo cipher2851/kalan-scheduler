@@ -4,8 +4,8 @@ import java.time.Instant
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-class KalanScheduler {
-    private val scheduler = ScheduledThreadPoolExecutor(1)
+class KalanScheduler(corePoolSize: Int = 1) {
+    private val scheduler = ScheduledThreadPoolExecutor(corePoolSize)
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
     private val running = AtomicBoolean(true)
 
@@ -39,6 +39,11 @@ class KalanScheduler {
 
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
+    }
+
+    fun isJobActive(id: String): Boolean {
+        val future = activeJobs[id]
+        return future != null && !future.isDone
     }
 
     fun shutdown() {
