@@ -1,5 +1,6 @@
 package com.kalan.scheduler
 
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -8,6 +9,8 @@ class KalanScheduler(corePoolSize: Int = 1) {
     private val scheduler = ScheduledThreadPoolExecutor(corePoolSize)
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
     private val running = AtomicBoolean(true)
+    
+    var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
 
     fun schedule(id: String, delayMs: Long, action: () -> Unit) {
         if (!running.get()) return
@@ -15,12 +18,17 @@ class KalanScheduler(corePoolSize: Int = 1) {
         val future = scheduler.schedule({
             try {
                 action()
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (e: Throwable) {
+                errorHandler(e)
             }
         }, delayMs, TimeUnit.MILLISECONDS)
         
         activeJobs[id] = future
+    }
+
+    fun scheduleAt(id: String, startTime: Instant, action: () -> Unit) {
+        val delay = Duration.between(Instant.now(), startTime).toMillis()
+        schedule(id, if (delay < 0) 0 else delay, action)
     }
 
     fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, action: () -> Unit) {
@@ -29,8 +37,8 @@ class KalanScheduler(corePoolSize: Int = 1) {
         val future = scheduler.scheduleAtFixedRate({
             try {
                 action()
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (e: Throwable) {
+                errorHandler(e)
             }
         }, initialDelayMs, periodMs, TimeUnit.MILLISECONDS)
 

@@ -2,6 +2,7 @@ package com.kalan.scheduler
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -20,6 +21,20 @@ class KalanSchedulerTest {
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         assertTrue(executed)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test schedule at specific time`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        val targetTime = Instant.now().plusMillis(200)
+
+        scheduler.scheduleAt("test-at", targetTime) {
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         scheduler.shutdown()
     }
 
@@ -48,6 +63,26 @@ class KalanSchedulerTest {
         scheduler.cancel("cancel-me")
         
         assertFalse(latch.await(400, TimeUnit.MILLISECONDS))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test error handler`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        var errorCaught = false
+
+        scheduler.errorHandler = { 
+            errorCaught = true
+            latch.countDown()
+        }
+
+        scheduler.schedule("error-job", 10) {
+            throw RuntimeException("Boom")
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertTrue(errorCaught)
         scheduler.shutdown()
     }
 }
