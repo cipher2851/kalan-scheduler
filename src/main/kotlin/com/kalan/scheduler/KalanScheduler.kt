@@ -45,6 +45,20 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, action: () -> Unit) {
+        if (!running.get()) return
+
+        val future = scheduler.scheduleWithFixedDelay({
+            try {
+                action()
+            } catch (e: Throwable) {
+                errorHandler(e)
+            }
+        }, initialDelayMs, delayMs, TimeUnit.MILLISECONDS)
+
+        activeJobs[id] = future
+    }
+
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
     }
@@ -54,10 +68,24 @@ class KalanScheduler(corePoolSize: Int = 1) {
         return future != null && !future.isDone
     }
 
+    fun getJobStatus(id: String): JobStatus {
+        val future = activeJobs[id]
+        return when {
+            future == null -> JobStatus.NOT_FOUND
+            future.isCancelled -> JobStatus.CANCELLED
+            future.isDone -> JobStatus.COMPLETED
+            else -> JobStatus.RUNNING
+        }
+    }
+
     fun shutdown() {
         running.set(false)
         scheduler.shutdownNow()
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
+}
+
+enum class JobStatus {
+    RUNNING, COMPLETED, CANCELLED, NOT_FOUND
 }

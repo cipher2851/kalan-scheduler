@@ -52,6 +52,19 @@ class KalanSchedulerTest {
     }
 
     @Test
+    fun `test fixed delay execution`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+
+        scheduler.scheduleWithFixedDelay("test-delay", 0, 50) {
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        scheduler.shutdown()
+    }
+
+    @Test
     fun `test job cancellation`() {
         val scheduler = KalanScheduler()
         val latch = CountDownLatch(1)
@@ -63,6 +76,25 @@ class KalanSchedulerTest {
         scheduler.cancel("cancel-me")
         
         assertFalse(latch.await(400, TimeUnit.MILLISECONDS))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job status`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+
+        scheduler.schedule("status-job", 100) {
+            latch.countDown()
+        }
+
+        assertEquals(JobStatus.RUNNING, scheduler.getJobStatus("status-job"))
+        
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(JobStatus.COMPLETED, scheduler.getJobStatus("status-job"))
+        
+        assertEquals(JobStatus.NOT_FOUND, scheduler.getJobStatus("unknown"))
+        
         scheduler.shutdown()
     }
 
