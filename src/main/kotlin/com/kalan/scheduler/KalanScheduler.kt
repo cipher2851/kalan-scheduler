@@ -84,6 +84,44 @@ class KalanScheduler(corePoolSize: Int = 1) {
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
+
+    fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
+        val builder = JobBuilder(id).apply(block)
+        when {
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.action)
+        }
+    }
+}
+
+class JobBuilder(val id: String) {
+    var initialDelay: Long = 0
+    var fixedRate: Long? = null
+    var fixedDelay: Long? = null
+    var atTime: Instant? = null
+    lateinit var action: () -> Unit
+
+    fun execute(block: () -> Unit) {
+        this.action = block
+    }
+
+    fun every(ms: Long) {
+        this.fixedRate = ms
+    }
+
+    fun withDelay(ms: Long) {
+        this.fixedDelay = ms
+    }
+
+    fun at(time: Instant) {
+        this.atTime = time
+    }
+
+    fun startAfter(ms: Long) {
+        this.initialDelay = ms
+    }
 }
 
 enum class JobStatus {

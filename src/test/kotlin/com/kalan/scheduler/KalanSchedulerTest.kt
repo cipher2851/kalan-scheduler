@@ -117,4 +117,36 @@ class KalanSchedulerTest {
         assertTrue(errorCaught)
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test DSL scheduling`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+
+        scheduler.scheduleJob("dsl-job") {
+            startAfter(50)
+            execute {
+                latch.countDown()
+            }
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test DSL periodic scheduling`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+
+        scheduler.scheduleJob("dsl-periodic") {
+            every(50)
+            execute {
+                latch.countDown()
+            }
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        scheduler.shutdown()
+    }
 }
