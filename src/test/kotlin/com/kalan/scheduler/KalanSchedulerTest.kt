@@ -21,6 +21,7 @@ class KalanSchedulerTest {
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         assertTrue(executed)
+        assertEquals(1, scheduler.getExecutionCount("test-1"))
         scheduler.shutdown()
     }
 
@@ -35,6 +36,7 @@ class KalanSchedulerTest {
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(1, scheduler.getExecutionCount("test-at"))
         scheduler.shutdown()
     }
 
@@ -48,6 +50,7 @@ class KalanSchedulerTest {
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertTrue(scheduler.getExecutionCount("test-periodic") >= 3)
         scheduler.shutdown()
     }
 
@@ -61,6 +64,7 @@ class KalanSchedulerTest {
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertTrue(scheduler.getExecutionCount("test-delay") >= 2)
         scheduler.shutdown()
     }
 
@@ -76,6 +80,7 @@ class KalanSchedulerTest {
         scheduler.cancel("cancel-me")
         
         assertFalse(latch.await(400, TimeUnit.MILLISECONDS))
+        assertEquals(0, scheduler.getExecutionCount("cancel-me"))
         scheduler.shutdown()
     }
 
@@ -115,6 +120,8 @@ class KalanSchedulerTest {
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         assertTrue(errorCaught)
+        // Even if it failed, the execute() method was called
+        assertEquals(1, scheduler.getExecutionCount("error-job"))
         scheduler.shutdown()
     }
 
@@ -131,6 +138,7 @@ class KalanSchedulerTest {
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(1, scheduler.getExecutionCount("dsl-job"))
         scheduler.shutdown()
     }
 
@@ -147,6 +155,7 @@ class KalanSchedulerTest {
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertTrue(scheduler.getExecutionCount("dsl-periodic") >= 2)
         scheduler.shutdown()
     }
 }

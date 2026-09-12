@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class KalanScheduler(corePoolSize: Int = 1) {
     private val scheduler = ScheduledThreadPoolExecutor(corePoolSize)
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
+    private val jobInstances = ConcurrentHashMap<String, Job>()
     private val running = AtomicBoolean(true)
     
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
@@ -15,9 +16,12 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun schedule(id: String, delayMs: Long, action: () -> Unit) {
         if (!running.get()) return
         
+        val job = Job(id, action, Instant.now().plusMillis(delayMs))
+        jobInstances[id] = job
+
         val future = scheduler.schedule({
             try {
-                action()
+                job.execute()
             } catch (e: Throwable) {
                 errorHandler(e)
             }
@@ -34,9 +38,12 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, action: () -> Unit) {
         if (!running.get()) return
 
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs)
+        jobInstances[id] = job
+
         val future = scheduler.scheduleAtFixedRate({
             try {
-                action()
+                job.execute()
             } catch (e: Throwable) {
                 errorHandler(e)
             }
@@ -48,9 +55,12 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, action: () -> Unit) {
         if (!running.get()) return
 
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs)
+        jobInstances[id] = job
+
         val future = scheduler.scheduleWithFixedDelay({
             try {
-                action()
+                job.execute()
             } catch (e: Throwable) {
                 errorHandler(e)
             }
@@ -61,6 +71,7 @@ class KalanScheduler(corePoolSize: Int = 1) {
 
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
+        jobInstances.remove(id)
     }
 
     fun isJobActive(id: String): Boolean {
@@ -78,9 +89,15 @@ class KalanScheduler(corePoolSize: Int = 1) {
         }
     }
 
+    fun getExecutionCount(id: String): Int {
+        return jobInstances[id]?.getExecutionCount() ?: 0
+    }
+
     fun shutdown() {
         running.set(false)
         scheduler.shutdownNow()
+        jobInstances.clear()
+        activeJobs.clear()
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
