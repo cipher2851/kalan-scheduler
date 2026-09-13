@@ -232,4 +232,30 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test listAllJobs`() {
+        val scheduler = KalanScheduler()
+        scheduler.schedule("job-1", 100) {}
+        scheduler.schedule("job-2", 200) {}
+        
+        val jobs = scheduler.listAllJobs()
+        assertEquals(2, jobs.size)
+        assertTrue(jobs.any { it.id == "job-1" })
+        assertTrue(jobs.any { it.id == "job-2" })
+        
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test priority in DSL`() {
+        val scheduler = KalanScheduler()
+        scheduler.scheduleJob("priority-job") {
+            withPriority(10)
+            execute {}
+        }
+        val info = scheduler.getJobInfo("priority-job")
+        assertEquals(10, info?.priority)
+        scheduler.shutdown()
+    }
 }

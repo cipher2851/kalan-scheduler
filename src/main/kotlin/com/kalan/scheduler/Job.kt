@@ -9,8 +9,9 @@ class Job(
     val id: String,
     @Volatile var action: () -> Unit,
     val startTime: Instant,
-    val intervalMs: Long? = null
-) {
+    val intervalMs: Long? = null,
+    val priority: Int = 0
+) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)
     private val paused = AtomicBoolean(false)
@@ -31,4 +32,7 @@ class Job(
     fun getExecutionCount(): Int = executionCount.get()
     
     fun getLastExecutionTime(): Instant? = lastExecutionTime.get()
+
+    override fun compareTo(other: Job):
+        return other.priority.compareTo(this.priority) // Higher priority first
 }
