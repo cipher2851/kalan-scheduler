@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 class Job(
     val id: String,
-    val action: () -> Unit,
+    @Volatile var action: () -> Unit,
     val startTime: Instant,
     val intervalMs: Long? = null
 ) {

@@ -158,4 +158,50 @@ class KalanSchedulerTest {
         assertTrue(scheduler.getExecutionCount("dsl-periodic") >= 2)
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test updateJob`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        var value = 0
+
+        scheduler.scheduleAtFixedRate("update-job", 0, 50) {
+            value += 1
+            latch.countDown()
+        }
+
+        // Wait for first execution
+        assertTrue(latch.await(200, TimeUnit.MILLISECONDS))
+        assertEquals(1, value)
+
+        scheduler.updateJob("update-job") {
+            value += 10
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(200, TimeUnit.MILLISECONDS))
+        assertEquals(11, value)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test getJobInfo`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+
+        scheduler.scheduleAtFixedRate("info-job", 0, 100) {
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        val info = scheduler.getJobInfo("info-job")
+        
+        assertNotNull(info)
+        assertEquals("info-job", info?.id)
+        assertEquals(JobStatus.RUNNING, info?.status)
+        assertEquals(100L, info?.intervalMs)
+        assertTrue(info?.executionCount ?: 0 >= 1)
+        
+        scheduler.shutdown()
+    }
 }

@@ -69,6 +69,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
+    fun updateJob(id: String, newAction: () -> Unit) {
+        jobInstances[id]?.action = newAction
+    }
+
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
         jobInstances.remove(id)
@@ -96,6 +100,11 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun getLastExecutionTime(id: String): Instant? {
         return jobInstances[id]?.getLastExecutionTime()
     }
+
+    fun getJobInfo(id: String): JobInfo?
+        = jobInstances[id]?.let {
+            JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs)
+        }
 
     fun shutdown() {
         running.set(false)
@@ -150,3 +159,11 @@ class JobBuilder(val id: String) {
 enum class JobStatus {
     RUNNING, COMPLETED, CANCELLED, NOT_FOUND
 }
+
+data class JobInfo(
+    val id: String,
+    val status: JobStatus,
+    val executionCount: Int,
+    val lastExecutionTime: Instant?,
+    val intervalMs: Long?
+)
