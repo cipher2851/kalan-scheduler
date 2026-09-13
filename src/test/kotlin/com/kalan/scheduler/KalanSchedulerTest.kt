@@ -204,4 +204,32 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test pause and resume`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        var count = 0
+
+        scheduler.scheduleAtFixedRate("pause-job", 0, 50) {
+            count++
+            latch.countDown()
+        }
+
+        // Wait for first run
+        assertTrue(latch.await(200, TimeUnit.MILLISECONDS))
+        
+        scheduler.pauseJob("pause-job")
+        val countBeforeResume = count
+        
+        // Wait to ensure it doesn't run while paused
+        Thread.sleep(200)
+        assertEquals(countBeforeResume, count)
+
+        scheduler.resumeJob("pause-job")
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertTrue(count > countBeforeResume)
+        
+        scheduler.shutdown()
+    }
 }

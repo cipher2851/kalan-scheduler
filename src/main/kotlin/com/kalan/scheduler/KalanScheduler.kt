@@ -24,6 +24,12 @@ class KalanScheduler(corePoolSize: Int = 1) {
                 job.execute()
             } catch (e: Throwable) {
                 errorHandler(e)
+            } finally {
+                // Cleanup for one-off tasks
+                if (job.intervalMs == null) {
+                    jobInstances.remove(id)
+                    activeJobs.remove(id)
+                }
             }
         }, delayMs, TimeUnit.MILLISECONDS)
         
@@ -71,6 +77,14 @@ class KalanScheduler(corePoolSize: Int = 1) {
 
     fun updateJob(id: String, newAction: () -> Unit) {
         jobInstances[id]?.action = newAction
+    }
+
+    fun pauseJob(id: String) {
+        jobInstances[id]?.setPaused(true)
+    }
+
+    fun resumeJob(id: String) {
+        jobInstances[id]?.setPaused(false)
     }
 
     fun cancel(id: String) {
