@@ -10,7 +10,8 @@ class Job(
     @Volatile var action: () -> Unit,
     val startTime: Instant,
     val intervalMs: Long? = null,
-    val priority: Int = 0
+    val priority: Int = 0,
+    var timeoutMs: Long? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)

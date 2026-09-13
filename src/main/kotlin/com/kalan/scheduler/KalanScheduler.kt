@@ -13,10 +13,45 @@ class KalanScheduler(corePoolSize: Int = 1) {
     
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, action: () -> Unit) {
+    private fun wrapExecution(job: Job, action: () -> Unit): () -> Unit {
+        return {
+            val timeout = job.timeoutMs
+            if (timeout == null) {
+                try {
+                    action()
+                } catch (e: Throwable) {
+                    errorHandler(e)
+                }
+            } else {
+                val future = CompletableFuture.runAsync({ 
+                    try {
+                        action()
+                    } catch (e: Throwable) {
+                        throw e
+                    }
+                }, scheduler)
+                
+                try {
+                    future.get(timeout, TimeUnit.MILLISECONDS)
+                } catch (e: TimeoutException) {
+                    future.cancel(true)
+                    errorHandler(TimeoutException("Job ${job.id} timed out after $timeout ms"))
+                } catch (e: ExecutionException) {
+                    errorHandler(e.cause ?: e)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    errorHandler(e)
+                } catch (e: Throwable) {
+                    errorHandler(e)
+                }
+            }
+        }
+    }
+
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, action: () -> Unit) {
         if (!running.get()) return
         
-        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority)
+        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs)
         jobInstances[id] = job
 
         val future = scheduler.schedule({
@@ -25,7 +60,6 @@ class KalanScheduler(corePoolSize: Int = 1) {
             } catch (e: Throwable) {
                 errorHandler(e)
             } finally {
-                // Cleanup for one-off tasks
                 if (job.intervalMs == null) {
                     jobInstances.remove(id)
                     activeJobs.remove(id)
@@ -36,15 +70,15 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, action: () -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, action: () -> Unit) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
-        schedule(id, if (delay < 0) 0 else delay, priority, action)
+        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, action: () -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs)
         jobInstances[id] = job
 
         val future = scheduler.scheduleAtFixedRate({
@@ -58,10 +92,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, action: () -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs)
         jobInstances[id] = job
 
         val future = scheduler.scheduleWithFixedDelay({
@@ -138,10 +172,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.action)
         }
     }
 }
@@ -152,6 +186,7 @@ class JobBuilder(val id: String) {
     var fixedDelay: Long? = null
     var atTime: Instant? = null
     var priority: Int = 0
+    var timeoutMs: Long? = null
     lateinit var action: () -> Unit
 
     fun execute(block: () -> Unit) {
@@ -176,6 +211,10 @@ class JobBuilder(val id: String) {
 
     fun withPriority(priority: Int) {
         this.priority = priority
+    }
+
+    fun withTimeout(ms: Long) {
+        this.timeoutMs = ms
     }
 }
 
