@@ -375,4 +375,21 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test execution ID is provided`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        var receivedId: String? = null
+
+        scheduler.schedule("exec-id-job", 0) {
+            receivedId = it
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertNotNull(receivedId)
+        assertTrue(receivedId!!.isNotEmpty())
+        scheduler.shutdown()
+    }
 }

@@ -1,13 +1,14 @@
 package com.kalan.scheduler
 
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class Job(
     val id: String,
-    @Volatile var action: () -> Unit,
+    @Volatile var action: (String) -> Unit, // Changed from () -> Unit to accept executionId
     val startTime: Instant,
     val intervalMs: Long? = null,
     @Volatile var priority: Int = 0,
@@ -33,7 +34,8 @@ class Job(
             return false
         }
 
-        action()
+        val executionId = UUID.randomUUID().toString()
+        action(executionId)
         executionCount.incrementAndGet()
         lastExecutionTime.set(Instant.now())
         return true

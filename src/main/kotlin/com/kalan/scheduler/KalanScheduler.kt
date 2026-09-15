@@ -48,7 +48,7 @@ class KalanScheduler(corePoolSize: Int = 1) {
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: (String) -> Unit) {
         if (!running.get()) return
         
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata)
@@ -71,12 +71,12 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: (String) -> Unit) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
         schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: () -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: (String) -> Unit) {
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions)
@@ -99,7 +99,7 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: () -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: (String) -> Unit) {
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions)
@@ -122,7 +122,7 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun updateJob(id: String, newAction: () -> Unit) {
+    fun updateJob(id: String, newAction: (String) -> Unit) {
         jobInstances[id]?.action = newAction
     }
 
@@ -222,9 +222,9 @@ class JobBuilder(val id: String) {
     var tags: Set<String> = emptySet()
     var metadata: Map<String, Any> = emptyMap()
     var maxRepetitions: Int? = null
-    lateinit var action: () -> Unit
+    lateinit var action: (String) -> Unit
 
-    fun execute(block: () -> Unit) {
+    fun execute(block: (String) -> Unit) {
         this.action = block
     }
 
