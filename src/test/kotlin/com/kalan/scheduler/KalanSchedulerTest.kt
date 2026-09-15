@@ -329,4 +329,29 @@ class KalanSchedulerTest {
 
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test metadata and dynamic updates`() {
+        val scheduler = KalanScheduler()
+        val meta = mapOf("env" to "test", "version" to 1)
+        
+        scheduler.scheduleJob("meta-job") {
+            withMetadata(meta)
+            withPriority(1)
+            execute {}
+        }
+        
+        var info = scheduler.getJobInfo("meta-job")
+        assertEquals(meta, info?.metadata)
+        assertEquals(1, info?.priority)
+        
+        scheduler.updateJobPriority("meta-job", 10)
+        scheduler.updateJobTimeout("meta-job", 500L)
+        
+        info = scheduler.getJobInfo("meta-job")
+        assertEquals(10, info?.priority)
+        assertEquals(500L, info?.timeoutMs)
+        
+        scheduler.shutdown()
+    }
 }

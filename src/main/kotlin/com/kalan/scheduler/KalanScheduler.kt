@@ -48,10 +48,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), action: () -> Unit) {
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
         if (!running.get()) return
         
-        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags)
+        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
@@ -71,15 +71,15 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), action: () -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
-        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, action)
+        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), action: () -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
@@ -94,10 +94,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), action: () -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
@@ -114,6 +114,14 @@ class KalanScheduler(corePoolSize: Int = 1) {
 
     fun updateJob(id: String, newAction: () -> Unit) {
         jobInstances[id]?.action = newAction
+    }
+
+    fun updateJobPriority(id: String, priority: Int) {
+        jobInstances[id]?.priority = priority
+    }
+
+    fun updateJobTimeout(id: String, timeoutMs: Long?) {
+        jobInstances[id]?.timeoutMs = timeoutMs
     }
 
     fun pauseJob(id: String) {
@@ -160,7 +168,7 @@ class KalanScheduler(corePoolSize: Int = 1) {
 
     fun getJobInfo(id: String): JobInfo?
         = jobInstances[id]?.let {
-            JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority, it.tags)
+            JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority, it.tags, it.metadata)
         }
 
     fun listAllJobs(): List<JobInfo> {
@@ -186,10 +194,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
         }
     }
 }
@@ -202,6 +210,7 @@ class JobBuilder(val id: String) {
     var priority: Int = 0
     var timeoutMs: Long? = null
     var tags: Set<String> = emptySet()
+    var metadata: Map<String, Any> = emptyMap()
     lateinit var action: () -> Unit
 
     fun execute(block: () -> Unit) {
@@ -235,6 +244,10 @@ class JobBuilder(val id: String) {
     fun withTags(vararg tags: String) {
         this.tags = tags.toSet()
     }
+
+    fun withMetadata(metadata: Map<String, Any>) {
+        this.metadata = metadata
+    }
 }
 
 enum class JobStatus {
@@ -248,5 +261,6 @@ data class JobInfo(
     val lastExecutionTime: Instant?,
     val intervalMs: Long?,
     val priority: Int,
-    val tags: Set<String>
+    val tags: Set<String>,
+    val metadata: Map<String, Any>
 )
