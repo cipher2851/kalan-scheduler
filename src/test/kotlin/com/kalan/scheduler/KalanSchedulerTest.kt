@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.*
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class KalanSchedulerTest {
 
@@ -256,6 +257,43 @@ class KalanSchedulerTest {
         }
         val info = scheduler.getJobInfo("priority-job")
         assertEquals(10, info?.priority)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job timeout enforcement`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        var timeoutCaught = false
+
+        scheduler.errorHandler = {
+            if (it is TimeoutException) {
+                timeoutCaught = true
+                latch.countDown()
+            }
+        }
+
+        // Job that takes 500ms but has a timeout of 100ms
+        scheduler.schedule("timeout-job", 0, timeoutMs = 100) {
+            Thread.sleep(500)
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "Timeout should have been triggered")
+        assertTrue(timeoutCaught)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job without timeout finishes normally`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+
+        scheduler.schedule("normal-job", 0, timeoutMs = null) {
+            Thread.sleep(200)
+            latch.countDown()
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "Job should have completed normally")
         scheduler.shutdown()
     }
 }
