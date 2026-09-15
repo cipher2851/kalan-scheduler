@@ -12,7 +12,7 @@ class Job(
     val intervalMs: Long? = null,
     @Volatile var priority: Int = 0,
     @Volatile var timeoutMs: Long? = null,
-    val tags: Set<String> = emptySet,
+    val tags: Set<String> = emptySet(),
     val metadata: Map<String, Any> = emptyMap(),
     val maxRepetitions: Int? = null
 ) : Comparable<Job> {
@@ -29,8 +29,7 @@ class Job(
     fun execute(): Boolean {
         if (paused.get()) return false
         
-        val count = executionCount.get()
-        if (maxRepetitions != null && count >= maxRepetitions) {
+        if (isMaxRepetitionsReached()) {
             return false
         }
 
@@ -43,6 +42,10 @@ class Job(
     fun getExecutionCount(): Int = executionCount.get()
     
     fun getLastExecutionTime(): Instant? = lastExecutionTime.get()
+
+    fun isMaxRepetitionsReached(): Boolean {
+        return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
+    }
 
     override fun compareTo(other: Job):
         return other.priority.compareTo(this.priority) // Higher priority first
