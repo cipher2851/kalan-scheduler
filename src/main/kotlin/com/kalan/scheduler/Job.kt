@@ -11,7 +11,8 @@ class Job(
     val startTime: Instant,
     val intervalMs: Long? = null,
     val priority: Int = 0,
-    var timeoutMs: Long? = null
+    var timeoutMs: Long? = null,
+    val tags: Set<String> = emptySet()
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)

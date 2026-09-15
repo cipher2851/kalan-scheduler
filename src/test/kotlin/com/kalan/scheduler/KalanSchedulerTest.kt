@@ -296,4 +296,37 @@ class KalanSchedulerTest {
         assertTrue(latch.await(1, TimeUnit.SECONDS), "Job should have completed normally")
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test job tags and bulk cancellation`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        
+        scheduler.scheduleJob("tag-job-1") {
+            withTags("batch1", "important")
+            execute { latch.countDown() }
+        }
+        scheduler.scheduleJob("tag-job-2") {
+            withTags("batch1")
+            execute { latch.countDown() }
+        }
+        scheduler.scheduleJob("tag-job-3") {
+            withTags("batch2")
+            execute { latch.countDown() }
+        }
+
+        val batch1Jobs = scheduler.listJobsByTag("batch1")
+        assertEquals(2, batch1Jobs.size)
+
+        scheduler.cancelByTag("batch1")
+        
+        // Job 3 should still run, Job 1 and 2 cancelled
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(1, latch.count)
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("tag-job-1"))
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("tag-job-2"))
+        assertEquals(JobStatus.COMPLETED, scheduler.getJobStatus("tag-job-3"))
+
+        scheduler.shutdown()
+    }
 }
