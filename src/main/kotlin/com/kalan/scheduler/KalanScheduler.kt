@@ -54,9 +54,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs)
         jobInstances[id] = job
 
+        val wrappedAction = wrapExecution(job) { job.execute() }
         val future = scheduler.schedule({
             try {
-                job.execute()
+                wrappedAction()
             } catch (e: Throwable) {
                 errorHandler(e)
             } finally {
@@ -81,9 +82,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs)
         jobInstances[id] = job
 
+        val wrappedAction = wrapExecution(job) { job.execute() }
         val future = scheduler.scheduleAtFixedRate({
             try {
-                job.execute()
+                wrappedAction()
             } catch (e: Throwable) {
                 errorHandler(e)
             }
@@ -98,9 +100,10 @@ class KalanScheduler(corePoolSize: Int = 1) {
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs)
         jobInstances[id] = job
 
+        val wrappedAction = wrapExecution(job) { job.execute() }
         val future = scheduler.scheduleWithFixedDelay({
             try {
-                job.execute()
+                wrappedAction()
             } catch (e: Throwable) {
                 errorHandler(e)
             }
