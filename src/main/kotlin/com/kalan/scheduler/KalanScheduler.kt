@@ -5,8 +5,8 @@ import java.time.Instant
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-class KalanScheduler(corePoolSize: Int = 1) {
-    private val scheduler = ScheduledThreadPoolExecutor(corePoolSize)
+class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = DefaultKalanThreadFactory()) {
+    private val scheduler = ScheduledThreadPoolExecutor(corePoolSize, threadFactory)
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
     private val jobInstances = ConcurrentHashMap<String, Job>()
     private val running = AtomicBoolean(true)
@@ -279,3 +279,10 @@ data class JobInfo(
     val tags: Set<String>,
     val metadata: Map<String, Any>
 )
+
+class DefaultKalanThreadFactory : ThreadFactory {
+    private val counter = java.util.concurrent.atomic.AtomicInteger(0)
+    override fun newThread(r: Runnable): Thread {
+        return Thread(r, "kalan-scheduler-worker-${counter.getAndIncrement()}")
+    }
+}
