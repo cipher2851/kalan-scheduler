@@ -13,7 +13,8 @@ class Job(
     @Volatile var priority: Int = 0,
     @Volatile var timeoutMs: Long? = null,
     val tags: Set<String> = emptySet,
-    val metadata: Map<String, Any> = emptyMap()
+    val metadata: Map<String, Any> = emptyMap(),
+    val maxRepetitions: Int? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)
@@ -25,11 +26,18 @@ class Job(
 
     fun isPaused(): Boolean = paused.get()
 
-    fun execute() {
-        if (paused.get()) return
+    fun execute(): Boolean {
+        if (paused.get()) return false
+        
+        val count = executionCount.get()
+        if (maxRepetitions != null && count >= maxRepetitions) {
+            return false
+        }
+
         action()
         executionCount.incrementAndGet()
         lastExecutionTime.set(Instant.now())
+        return true
     }
 
     fun getExecutionCount(): Int = executionCount.get()

@@ -76,13 +76,18 @@ class KalanScheduler(corePoolSize: Int = 1) {
         schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions)
         jobInstances[id] = job
 
-        val wrappedAction = wrapExecution(job) { job.execute() }
+        val wrappedAction = wrapExecution(job) { 
+            val success = job.execute()
+            if (!success && job.maxRepetitions != null) {
+                cancel(id)
+            }
+        }
         val future = scheduler.scheduleAtFixedRate({
             try {
                 wrappedAction()
@@ -94,13 +99,18 @@ class KalanScheduler(corePoolSize: Int = 1) {
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: () -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: () -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions)
         jobInstances[id] = job
 
-        val wrappedAction = wrapExecution(job) { job.execute() }
+        val wrappedAction = wrapExecution(job) { 
+            val success = job.execute()
+            if (!success && job.maxRepetitions != null) {
+                cancel(id)
+            }
+        }
         val future = scheduler.scheduleWithFixedDelay({
             try {
                 wrappedAction()
@@ -194,8 +204,8 @@ class KalanScheduler(corePoolSize: Int = 1) {
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
             builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
             else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
         }
@@ -211,6 +221,7 @@ class JobBuilder(val id: String) {
     var timeoutMs: Long? = null
     var tags: Set<String> = emptySet()
     var metadata: Map<String, Any> = emptyMap()
+    var maxRepetitions: Int? = null
     lateinit var action: () -> Unit
 
     fun execute(block: () -> Unit) {
@@ -247,6 +258,10 @@ class JobBuilder(val id: String) {
 
     fun withMetadata(metadata: Map<String, Any>) {
         this.metadata = metadata
+    }
+
+    fun repeatAtMost(times: Int) {
+        this.maxRepetitions = times
     }
 }
 

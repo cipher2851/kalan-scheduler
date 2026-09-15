@@ -56,6 +56,27 @@ class KalanSchedulerTest {
     }
 
     @Test
+    fun `test periodic execution with max repetitions`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(3)
+        
+        scheduler.scheduleJob("limited-job") {
+            every(50)
+            repeatAtMost(3)
+            execute { latch.countDown() }
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertEquals(3, scheduler.getExecutionCount("limited-job"))
+        
+        // Wait more to ensure it doesn't run further
+        Thread.sleep(150)
+        assertEquals(3, scheduler.getExecutionCount("limited-job"))
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("limited-job"))
+        scheduler.shutdown()
+    }
+
+    @Test
     fun `test fixed delay execution`() {
         val scheduler = KalanScheduler()
         val latch = CountDownLatch(2)
