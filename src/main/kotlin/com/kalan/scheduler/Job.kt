@@ -50,6 +50,7 @@ class Job(
         return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
     }
 
-    override fun compareTo(other: Job):
+    override fun compareTo(other: Job): Int {
         return other.priority.compareTo(this.priority) // Higher priority first
+    }
 }
