@@ -56,23 +56,25 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val wrappedAction = wrapExecution(job) { job.execute() }
         
-        val task = Runnable {
-            try {
-                if (job.dependsOn != null) {
-                    val depJob = jobInstances[job.dependsOn]
-                    if (depJob == null || !depJob.isCompleted()) {
-                        // Dependency not met, reschedule the task itself
-                        scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
-                        return@Runnable
+        val task = object : Runnable {
+            override fun run() {
+                try {
+                    if (job.dependsOn != null) {
+                        val depJob = jobInstances[job.dependsOn]
+                        if (depJob == null || !depJob.isCompleted()) {
+                            // Dependency not met or not yet registered, reschedule
+                            scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
+                            return
+                        }
                     }
-                }
-                wrappedAction()
-            } catch (e: Throwable) {
-                errorHandler(e)
-            } finally {
-                if (job.intervalMs == null) {
-                    jobInstances.remove(id)
-                    activeJobs.remove(id)
+                    wrappedAction()
+                } catch (e: Throwable) {
+                    errorHandler(e)
+                } finally {
+                    if (job.intervalMs == null) {
+                        jobInstances.remove(id)
+                        activeJobs.remove(id)
+                    }
                 }
             }
         }
@@ -222,6 +224,12 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
             else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
         }
+    }
+
+    fun isDependencySatisfied(jobId: String): Boolean {
+        val job = jobInstances[jobId] ?: return true
+        val depId = job.dependsOn ?: return true
+        return jobInstances[depId]?.isCompleted() ?: false
     }
 }
 
