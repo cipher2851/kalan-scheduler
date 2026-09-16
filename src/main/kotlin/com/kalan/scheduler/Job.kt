@@ -15,7 +15,8 @@ class Job(
     @Volatile var timeoutMs: Long? = null,
     val tags: Set<String> = emptySet(),
     val metadata: Map<String, Any> = emptyMap(),
-    val maxRepetitions: Int? = null
+    val maxRepetitions: Int? = null,
+    val dependsOn: String? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)

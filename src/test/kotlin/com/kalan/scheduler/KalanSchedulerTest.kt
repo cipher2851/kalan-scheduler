@@ -392,4 +392,30 @@ class KalanSchedulerTest {
         assertTrue(receivedId!!.isNotEmpty())
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test job dependencies`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        val results = mutableListOf<String>()
+
+        scheduler.scheduleJob("job-1") {
+            execute { 
+                results.add("job-1")
+                latch.countDown()
+            }
+        }
+
+        scheduler.scheduleJob("job-2") {
+            dependsOn("job-1")
+            execute { 
+                results.add("job-2")
+                latch.countDown()
+            }
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertEquals(listOf("job-1", "job-2"), results)
+        scheduler.shutdown()
+    }
 }

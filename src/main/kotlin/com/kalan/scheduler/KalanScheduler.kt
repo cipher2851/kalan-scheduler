@@ -48,15 +48,20 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: (String) -> Unit) {
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, action: (String) -> Unit) {
         if (!running.get()) return
         
-        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata)
+        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
         val future = scheduler.schedule({
             try {
+                if (job.dependsOn != null && getJobStatus(job.dependsOn) != JobStatus.COMPLETED) {
+                    // Dependency not met, reschedule after a short delay
+                    schedule(id, 100, priority, timeoutMs, tags, metadata, dependsOn, action)
+                    return@schedule
+                }
                 wrappedAction()
             } catch (e: Throwable) {
                 errorHandler(e)
@@ -71,9 +76,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), action: (String) -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, action: (String) -> Unit) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
-        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, action)
+        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, action)
     }
 
     fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: (String) -> Unit) {
@@ -206,8 +211,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         when {
             builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
             builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
         }
     }
 }
@@ -222,6 +227,7 @@ class JobBuilder(val id: String) {
     var tags: Set<String> = emptySet()
     var metadata: Map<String, Any> = emptyMap()
     var maxRepetitions: Int? = null
+    var dependsOn: String? = null
     lateinit var action: (String) -> Unit
 
     fun execute(block: (String) -> Unit) {
@@ -262,6 +268,10 @@ class JobBuilder(val id: String) {
 
     fun repeatAtMost(times: Int) {
         this.maxRepetitions = times
+    }
+
+    fun dependsOn(jobId: String) {
+        this.dependsOn = jobId
     }
 }
 
