@@ -55,12 +55,16 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
-        val future = scheduler.schedule({
+        
+        val task = Runnable {
             try {
-                if (job.dependsOn != null && getJobStatus(job.dependsOn) != JobStatus.COMPLETED) {
-                    // Dependency not met, reschedule after a short delay
-                    schedule(id, 100, priority, timeoutMs, tags, metadata, dependsOn, action)
-                    return@schedule
+                if (job.dependsOn != null) {
+                    val depJob = jobInstances[job.dependsOn]
+                    if (depJob == null || !depJob.isCompleted()) {
+                        // Dependency not met, reschedule the task itself
+                        scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
+                        return@Runnable
+                    }
                 }
                 wrappedAction()
             } catch (e: Throwable) {
@@ -71,8 +75,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                     activeJobs.remove(id)
                 }
             }
-        }, delayMs, TimeUnit.MILLISECONDS)
-        
+        }
+
+        val future = scheduler.schedule(task, delayMs, TimeUnit.MILLISECONDS)
         activeJobs[id] = future
     }
 
@@ -164,6 +169,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun getJobStatus(id: String): JobStatus {
+        val job = jobInstances[id]
+        if (job != null && job.isCompleted()) return JobStatus.COMPLETED
+        
         val future = activeJobs[id]
         return when {
             future == null -> JobStatus.NOT_FOUND

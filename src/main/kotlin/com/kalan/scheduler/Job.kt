@@ -21,12 +21,19 @@ class Job(
     private val executionCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)
     private val paused = AtomicBoolean(false)
+    private val completed = AtomicBoolean(false)
 
     fun setPaused(paused: Boolean) {
         this.paused.set(paused)
     }
 
     fun isPaused(): Boolean = paused.get()
+
+    fun markCompleted() {
+        completed.set(true)
+    }
+
+    fun isCompleted(): Boolean = completed.get()
 
     fun execute(): Boolean {
         if (paused.get()) return false
@@ -39,6 +46,10 @@ class Job(
         action(executionId)
         executionCount.incrementAndGet()
         lastExecutionTime.set(Instant.now())
+        
+        if (intervalMs == null) {
+            markCompleted()
+        }
         return true
     }
 
