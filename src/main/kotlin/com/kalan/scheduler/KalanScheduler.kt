@@ -117,6 +117,23 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
+    fun scheduleAsync(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?): CompletableFuture<Any?> {
+        val resultFuture = CompletableFuture<Any?>()
+        
+        schedule(id, delayMs, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy) {
+            try {
+                val res = action(it)
+                resultFuture.complete(res)
+                res
+            } catch (e: Throwable) {
+                resultFuture.completeExceptionally(e)
+                throw e
+            }
+        }
+        
+        return resultFuture
+    }
+
     fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
         schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, action)

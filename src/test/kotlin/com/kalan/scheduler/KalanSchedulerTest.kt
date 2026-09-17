@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CompletableFuture
 
 class KalanSchedulerTest {
 
@@ -25,6 +26,35 @@ class KalanSchedulerTest {
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         assertTrue(executed)
         assertEquals(1, scheduler.getExecutionCount("test-1"))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test schedule async execution`() {
+        val scheduler = KalanScheduler()
+        val expectedResult = "Async-Success"
+        
+        val future = scheduler.scheduleAsync("async-job", 100) {
+            expectedResult
+        }
+
+        val result = future.get(500, TimeUnit.MILLISECONDS)
+        assertEquals(expectedResult, result)
+        assertEquals(1, scheduler.getExecutionCount("async-job"))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test schedule async failure`() {
+        val scheduler = KalanScheduler()
+        
+        val future = scheduler.scheduleAsync("async-fail-job", 100) {
+            throw RuntimeException("Async Boom")
+        }
+
+        assertThrows(java.util.concurrent.ExecutionException::class.java) {
+            future.get(500, TimeUnit.MILLISECONDS)
+        }
         scheduler.shutdown()
     }
 
