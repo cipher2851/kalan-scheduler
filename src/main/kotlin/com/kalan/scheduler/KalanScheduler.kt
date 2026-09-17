@@ -79,7 +79,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?) {
         if (!running.get()) return
         
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy)
@@ -117,12 +117,12 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
         schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?) {
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy)
@@ -130,8 +130,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
-            val success = job.execute()
-            if (!success && job.maxRepetitions != null) {
+            val result = job.execute()
+            if (result is JobResult.MaxRepetitionsReached) {
                 cancel(id)
             }
         }
@@ -146,7 +146,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Any?) {
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy)
@@ -154,8 +154,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
-            val success = job.execute()
-            if (!success && job.maxRepetitions != null) {
+            val result = job.execute()
+            if (result is JobResult.MaxRepetitionsReached) {
                 cancel(id)
             }
         }
@@ -170,7 +170,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun updateJob(id: String, newAction: (String) -> Unit) {
+    fun updateJob(id: String, newAction: (String) -> Any?) {
         jobInstances[id]?.action = newAction
     }
 
@@ -226,6 +226,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun getLastExecutionTime(id: String): Instant? {
         return jobInstances[id]?.getLastExecutionTime()
+    }
+
+    fun getLastResult(id: String): Any? {
+        return jobInstances[id]?.getLastResult()
     }
 
     fun getJobInfo(id: String): JobInfo?
@@ -284,9 +288,9 @@ class JobBuilder(val id: String) {
     var maxRepetitions: Int? = null
     var dependsOn: String? = null
     var retryPolicy: RetryPolicy? = null
-    lateinit var action: (String) -> Unit
+    lateinit var action: (String) -> Any?
 
-    fun execute(block: (String) -> Unit) {
+    fun execute(block: (String) -> Any?) {
         this.action = block
     }
 

@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 class Job(
     val id: String,
-    @Volatile var action: (String) -> Unit, // Changed from () -> Unit to accept executionId
+    @Volatile var action: (String) -> Any?,
     val startTime: Instant,
     val intervalMs: Long? = null,
     @Volatile var priority: Int = 0,
@@ -24,6 +24,7 @@ class Job(
     private val lastExecutionTime = AtomicReference<Instant?>(null)
     private val paused = AtomicBoolean(false)
     private val completed = AtomicBoolean(false)
+    private val lastResult = AtomicReference<Any?>(null)
 
     fun setPaused(paused: Boolean) {
         this.paused.set(paused)
@@ -43,27 +44,31 @@ class Job(
 
     fun getFailureCount(): Int = failureCount.get()
 
-    fun execute(): Boolean {
-        if (paused.get()) return false
+    fun execute(): JobResult {
+        if (paused.get()) return JobResult.Paused
         
         if (isMaxRepetitionsReached()) {
-            return false
+            return JobResult.MaxRepetitionsReached
         }
 
         val executionId = UUID.randomUUID().toString()
-        action(executionId)
+        val result = action(executionId)
+        
+        lastResult.set(result)
         executionCount.incrementAndGet()
         lastExecutionTime.set(Instant.now())
         
         if (intervalMs == null) {
             markCompleted()
         }
-        return true
+        return JobResult.Success(result)
     }
 
     fun getExecutionCount(): Int = executionCount.get()
     
     fun getLastExecutionTime(): Instant? = lastExecutionTime.get()
+
+    fun getLastResult(): Any? = lastResult.get()
 
     fun isMaxRepetitionsReached(): Boolean {
         return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
@@ -78,3 +83,10 @@ data class RetryPolicy(
     val maxRetries: Int,
     val delayMs: Long
 )
+
+sealed class JobResult {
+    data class Success(val value: Any?) : JobResult()
+    object Paused : JobResult()
+    object MaxRepetitionsReached : JobResult()
+    data class Failure(val exception: Throwable) : JobResult()
+}

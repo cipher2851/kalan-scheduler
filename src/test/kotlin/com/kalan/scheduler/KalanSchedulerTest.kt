@@ -19,6 +19,7 @@ class KalanSchedulerTest {
         scheduler.schedule("test-1", 100) {
             executed = true
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
@@ -35,6 +36,7 @@ class KalanSchedulerTest {
 
         scheduler.scheduleAt("test-at", targetTime) {
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
@@ -49,6 +51,7 @@ class KalanSchedulerTest {
 
         scheduler.scheduleAtFixedRate("test-periodic", 0, 50) {
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -64,7 +67,7 @@ class KalanSchedulerTest {
         scheduler.scheduleJob("limited-job") {
             every(50)
             repeatAtMost(3)
-            execute { latch.countDown() }
+            execute { latch.countDown(); null }
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -84,6 +87,7 @@ class KalanSchedulerTest {
 
         scheduler.scheduleWithFixedDelay("test-delay", 0, 50) {
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -98,6 +102,7 @@ class KalanSchedulerTest {
         
         scheduler.schedule("cancel-me", 200) {
             latch.countDown()
+            null
         }
         
         scheduler.cancel("cancel-me")
@@ -114,6 +119,7 @@ class KalanSchedulerTest {
 
         scheduler.schedule("status-job", 100) {
             latch.countDown()
+            null
         }
 
         assertEquals(JobStatus.RUNNING, scheduler.getJobStatus("status-job"))
@@ -157,6 +163,7 @@ class KalanSchedulerTest {
             startAfter(50)
             execute {
                 latch.countDown()
+                null
             }
         }
 
@@ -174,6 +181,7 @@ class KalanSchedulerTest {
             every(50)
             execute {
                 latch.countDown()
+                null
             }
         }
 
@@ -191,6 +199,7 @@ class KalanSchedulerTest {
         scheduler.scheduleAtFixedRate("update-job", 0, 50) {
             value += 1
             latch.countDown()
+            null
         }
 
         // Wait for first execution
@@ -200,6 +209,7 @@ class KalanSchedulerTest {
         scheduler.updateJob("update-job") {
             value += 10
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(200, TimeUnit.MILLISECONDS))
@@ -214,6 +224,7 @@ class KalanSchedulerTest {
 
         scheduler.scheduleAtFixedRate("info-job", 0, 100) {
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
@@ -237,6 +248,7 @@ class KalanSchedulerTest {
         scheduler.scheduleAtFixedRate("pause-job", 0, 50) {
             count++
             latch.countDown()
+            null
         }
 
         // Wait for first run
@@ -259,8 +271,8 @@ class KalanSchedulerTest {
     @Test
     fun `test listAllJobs`() {
         val scheduler = KalanScheduler()
-        scheduler.schedule("job-1", 100) {}
-        scheduler.schedule("job-2", 200) {}
+        scheduler.schedule("job-1", 100) { null }
+        scheduler.schedule("job-2", 200) { null }
         
         val jobs = scheduler.listAllJobs()
         assertEquals(2, jobs.size)
@@ -275,7 +287,7 @@ class KalanSchedulerTest {
         val scheduler = KalanScheduler()
         scheduler.scheduleJob("priority-job") {
             withPriority(10)
-            execute {}
+            execute { null }
         }
         val info = scheduler.getJobInfo("priority-job")
         assertEquals(10, info?.priority)
@@ -298,6 +310,7 @@ class KalanSchedulerTest {
         // Job that takes 500ms but has a timeout of 100ms
         scheduler.schedule("timeout-job", 0, timeoutMs = 100) {
             Thread.sleep(500)
+            null
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS), "Timeout should have been triggered")
@@ -313,6 +326,7 @@ class KalanSchedulerTest {
         scheduler.schedule("normal-job", 0, timeoutMs = null) {
             Thread.sleep(200)
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS), "Job should have completed normally")
@@ -326,15 +340,15 @@ class KalanSchedulerTest {
         
         scheduler.scheduleJob("tag-job-1") {
             withTags("batch1", "important")
-            execute { latch.countDown() }
+            execute { latch.countDown(); null }
         }
         scheduler.scheduleJob("tag-job-2") {
             withTags("batch1")
-            execute { latch.countDown() }
+            execute { latch.countDown(); null }
         }
         scheduler.scheduleJob("tag-job-3") {
             withTags("batch2")
-            execute { latch.countDown() }
+            execute { latch.countDown(); null }
         }
 
         val batch1Jobs = scheduler.listJobsByTag("batch1")
@@ -360,7 +374,7 @@ class KalanSchedulerTest {
         scheduler.scheduleJob("meta-job") {
             withMetadata(meta)
             withPriority(1)
-            execute {}
+            execute { null }
         }
         
         var info = scheduler.getJobInfo("meta-job")
@@ -386,6 +400,7 @@ class KalanSchedulerTest {
         scheduler.schedule("exec-id-job", 0) {
             receivedId = it
             latch.countDown()
+            null
         }
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
@@ -404,6 +419,7 @@ class KalanSchedulerTest {
             execute { 
                 results.add("job-1")
                 latch.countDown()
+                null
             }
         }
 
@@ -412,6 +428,7 @@ class KalanSchedulerTest {
             execute { 
                 results.add("job-2")
                 latch.countDown()
+                null
             }
         }
 
@@ -443,8 +460,8 @@ class KalanSchedulerTest {
     @Test
     fun `test total job count`() {
         val scheduler = KalanScheduler()
-        scheduler.schedule("j1", 10) {}
-        scheduler.schedule("j2", 20) {}
+        scheduler.schedule("j1", 10) { null }
+        scheduler.schedule("j2", 20) { null }
         
         assertEquals(2, scheduler.getTotalJobCount())
         
@@ -467,7 +484,7 @@ class KalanSchedulerTest {
         })
 
         scheduler.schedule("event-job", 10) {
-            // do nothing
+            null
         }
 
         assertTrue(latch.await(1, TimeUnit.SECONDS))
@@ -501,6 +518,22 @@ class KalanSchedulerTest {
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertTrue(events.any { it.type == JobEvent.Type.FAILED && it.jobId == "fail-job" })
         
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job result retrieval`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        val expectedValue = "Success-Result"
+
+        scheduler.schedule("result-job", 0) {
+            latch.countDown()
+            expectedValue
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(expectedValue, scheduler.getLastResult("result-job"))
         scheduler.shutdown()
     }
 }
