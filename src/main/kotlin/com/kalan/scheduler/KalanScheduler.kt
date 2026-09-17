@@ -10,8 +10,21 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
     private val jobInstances = ConcurrentHashMap<String, Job>()
     private val running = AtomicBoolean(true)
+    private val listeners = CopyOnWriteArrayList<JobEventListener>()
     
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
+
+    fun addEventListener(listener: JobEventListener) {
+        listeners.add(listener)
+    }
+
+    fun removeEventListener(listener: JobEventListener) {
+        listeners.remove(listener)
+    }
+
+    private fun notifyListeners(event: JobEvent) {
+        listeners.forEach { it.onEvent(event) }
+    }
 
     private fun wrapExecution(job: Job, action: () -> Unit): () -> Unit {
         return {
@@ -50,6 +63,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private fun handleFailure(job: Job, e: Throwable) {
         job.incrementFailure()
+        notifyListeners(JobEvent(JobEvent.Type.FAILED, job.id, e))
         errorHandler(e)
 
         val policy = job.retryPolicy
@@ -71,7 +85,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy)
         jobInstances[id] = job
 
-        val wrappedAction = wrapExecution(job) { job.execute() }
+        val wrappedAction = wrapExecution(job) {
+            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
+            job.execute()
+        }
         
         val task = object : Runnable {
             override fun run() {
@@ -88,8 +105,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                 } catch (e: Throwable) {
                     errorHandler(e)
                 } finally {
-                    if (job.intervalMs == null) {
-                        // We don't remove from jobInstances immediately if we want to track completions
+                    if (job.intervalMs == null && job.isCompleted()) {
+                        notifyListeners(JobEvent(JobEvent.Type.COMPLETED, job.id))
                         activeJobs.remove(id)
                     }
                 }
@@ -112,6 +129,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { 
+            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val success = job.execute()
             if (!success && job.maxRepetitions != null) {
                 cancel(id)
@@ -135,6 +153,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { 
+            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val success = job.execute()
             if (!success && job.maxRepetitions != null) {
                 cancel(id)
@@ -174,6 +193,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
         jobInstances.remove(id)
+        notifyListeners(JobEvent(JobEvent.Type.CANCELLED, id))
     }
 
     fun cancelByTag(tag: String) {
@@ -335,4 +355,18 @@ class DefaultKalanThreadFactory : ThreadFactory {
     override fun newThread(r: Runnable): Thread {
         return Thread(r, "kalan-scheduler-worker-${counter.getAndIncrement()}")
     }
+}
+
+data class JobEvent(
+    val type: Type,
+    val jobId: String,
+    val throwable: Throwable? = null
+) {
+    enum class Type {
+        STARTED, COMPLETED, FAILED, CANCELLED
+    }
+}
+
+interface JobEventListener {
+    fun onEvent(event: JobEvent)
 }

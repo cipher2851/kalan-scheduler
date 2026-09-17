@@ -6,6 +6,7 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.ConcurrentLinkedQueue
 
 class KalanSchedulerTest {
 
@@ -446,6 +447,59 @@ class KalanSchedulerTest {
         scheduler.schedule("j2", 20) {}
         
         assertEquals(2, scheduler.getTotalJobCount())
+        
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job event listeners`() {
+        val scheduler = KalanScheduler()
+        val events = ConcurrentLinkedQueue<JobEvent>()
+        val latch = CountDownLatch(2)
+
+        scheduler.addEventListener(object : JobEventListener {
+            override fun onEvent(event: JobEvent) {
+                events.add(event)
+                if (event.type == JobEvent.Type.COMPLETED) {
+                    latch.countDown()
+                }
+            }
+        })
+
+        scheduler.schedule("event-job", 10) {
+            // do nothing
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        
+        val jobEvents = events.filter { it.jobId == "event-job" }
+        assertTrue(jobEvents.any { it.type == JobEvent.Type.STARTED })
+        assertTrue(jobEvents.any { it.type == JobEvent.Type.COMPLETED })
+        
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test job failure event`() {
+        val scheduler = KalanScheduler()
+        val events = ConcurrentLinkedQueue<JobEvent>()
+        val latch = CountDownLatch(1)
+
+        scheduler.addEventListener(object : JobEventListener {
+            override fun onEvent(event: JobEvent) {
+                events.add(event)
+                if (event.type == JobEvent.Type.FAILED) {
+                    latch.countDown()
+                }
+            }
+        })
+
+        scheduler.schedule("fail-job", 10) {
+            throw RuntimeException("Fail")
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertTrue(events.any { it.type == JobEvent.Type.FAILED && it.jobId == "fail-job" })
         
         scheduler.shutdown()
     }
