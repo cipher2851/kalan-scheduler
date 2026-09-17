@@ -16,9 +16,11 @@ class Job(
     val tags: Set<String> = emptySet(),
     val metadata: Map<String, Any> = emptyMap(),
     val maxRepetitions: Int? = null,
-    val dependsOn: String? = null
+    val dependsOn: String? = null,
+    val retryPolicy: RetryPolicy? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
+    private val failureCount = AtomicInteger(0)
     private val lastExecutionTime = AtomicReference<Instant?>(null)
     private val paused = AtomicBoolean(false)
     private val completed = AtomicBoolean(false)
@@ -34,6 +36,12 @@ class Job(
     }
 
     fun isCompleted(): Boolean = completed.get()
+
+    fun incrementFailure() {
+        failureCount.incrementAndGet()
+    }
+
+    fun getFailureCount(): Int = failureCount.get()
 
     fun execute(): Boolean {
         if (paused.get()) return false
@@ -65,3 +73,8 @@ class Job(
         return other.priority.compareTo(this.priority) // Higher priority first
     }
 }
+
+data class RetryPolicy(
+    val maxRetries: Int,
+    val delayMs: Long
+)

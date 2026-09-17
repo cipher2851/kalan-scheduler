@@ -418,4 +418,35 @@ class KalanSchedulerTest {
         assertEquals(listOf("job-1", "job-2"), results)
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test retry policy`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(3)
+        var attempts = 0
+
+        scheduler.scheduleJob("retry-job") {
+            withRetryPolicy(maxRetries = 2, delayMs = 50)
+            execute {
+                attempts++
+                latch.countDown()
+                throw RuntimeException("Fail")
+            }
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        assertEquals(3, attempts)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test total job count`() {
+        val scheduler = KalanScheduler()
+        scheduler.schedule("j1", 10) {}
+        scheduler.schedule("j2", 20) {}
+        
+        assertEquals(2, scheduler.getTotalJobCount())
+        
+        scheduler.shutdown()
+    }
 }

@@ -20,7 +20,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                 try {
                     action()
                 } catch (e: Throwable) {
-                    errorHandler(e)
+                    handleFailure(job, e)
                 }
             } else {
                 val future = CompletableFuture.runAsync({ 
@@ -35,23 +35,40 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                     future.get(timeout, TimeUnit.MILLISECONDS)
                 } catch (e: TimeoutException) {
                     future.cancel(true)
-                    errorHandler(TimeoutException("Job ${job.id} timed out after $timeout ms"))
+                    handleFailure(job, TimeoutException("Job ${job.id} timed out after $timeout ms"))
                 } catch (e: ExecutionException) {
-                    errorHandler(e.cause ?: e)
+                    handleFailure(job, e.cause ?: e)
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
-                    errorHandler(e)
+                    handleFailure(job, e)
                 } catch (e: Throwable) {
-                    errorHandler(e)
+                    handleFailure(job, e)
                 }
             }
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, action: (String) -> Unit) {
+    private fun handleFailure(job: Job, e: Throwable) {
+        job.incrementFailure()
+        errorHandler(e)
+
+        val policy = job.retryPolicy
+        if (policy != null && job.getFailureCount() <= policy.maxRetries) {
+            // Reschedule a one-time retry attempt
+            scheduler.schedule({
+                try {
+                    job.execute()
+                } catch (retryEx: Throwable) {
+                    handleFailure(job, retryEx)
+                }
+            }, policy.delayMs, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
         if (!running.get()) return
         
-        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn)
+        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { job.execute() }
@@ -72,7 +89,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                     errorHandler(e)
                 } finally {
                     if (job.intervalMs == null) {
-                        jobInstances.remove(id)
+                        // We don't remove from jobInstances immediately if we want to track completions
                         activeJobs.remove(id)
                     }
                 }
@@ -83,15 +100,15 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, action: (String) -> Unit) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
-        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, action)
+        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: (String) -> Unit) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { 
@@ -111,10 +128,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, action: (String) -> Unit) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, action: (String) -> Unit) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy)
         jobInstances[id] = job
 
         val wrappedAction = wrapExecution(job) { 
@@ -214,15 +231,17 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun getActiveJobCount(): Int = activeJobs.size
 
+    fun getTotalJobCount(): Int = jobInstances.size
+
     fun getActiveJobIds(): Set<String> = activeJobs.keys.toSet()
 
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.action)
         }
     }
 
@@ -244,6 +263,7 @@ class JobBuilder(val id: String) {
     var metadata: Map<String, Any> = emptyMap()
     var maxRepetitions: Int? = null
     var dependsOn: String? = null
+    var retryPolicy: RetryPolicy? = null
     lateinit var action: (String) -> Unit
 
     fun execute(block: (String) -> Unit) {
@@ -288,6 +308,10 @@ class JobBuilder(val id: String) {
 
     fun dependsOn(jobId: String) {
         this.dependsOn = jobId
+    }
+
+    fun withRetryPolicy(maxRetries: Int, delayMs: Long) {
+        this.retryPolicy = RetryPolicy(maxRetries, delayMs)
     }
 }
 
