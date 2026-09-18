@@ -94,8 +94,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             override fun run() {
                 try {
                     if (job.dependsOn != null) {
-                        val depJob = jobInstances[job.dependsOn]
-                        if (depJob == null || !depJob.isCompleted()) {
+                        if (!isDependencySatisfied(job.id)) {
                             // Dependency not met or not yet registered, reschedule
                             scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
                             return
