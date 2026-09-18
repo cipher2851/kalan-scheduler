@@ -17,7 +17,8 @@ class Job(
     val metadata: Map<String, Any> = emptyMap(),
     val maxRepetitions: Int? = null,
     val dependsOn: String? = null,
-    val retryPolicy: RetryPolicy? = null
+    val retryPolicy: RetryPolicy? = null,
+    val concurrencyLimit: Int? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val failureCount = AtomicInteger(0)
@@ -25,6 +26,7 @@ class Job(
     private val paused = AtomicBoolean(false)
     private val completed = AtomicBoolean(false)
     private val lastResult = AtomicReference<Any?>(null)
+    private val activeExecutions = AtomicInteger(0)
 
     fun setPaused(paused: Boolean) {
         this.paused.set(paused)
@@ -43,6 +45,21 @@ class Job(
     }
 
     fun getFailureCount(): Int = failureCount.get()
+
+    fun tryAcquireSlot(): Boolean {
+        if (concurrencyLimit == null) return true
+        while (true) {
+            val current = activeExecutions.get()
+            if (current >= concurrencyLimit!!) return false
+            if (activeExecutions.compareAndSet(current, current + 1)) return true
+        }
+    }
+
+    fun releaseSlot() {
+        if (concurrencyLimit != null) {
+            activeExecutions.decrementAndGet()
+        }
+    }
 
     fun execute(): JobResult {
         if (paused.get()) return JobResult.Paused
@@ -89,4 +106,5 @@ sealed class JobResult {
     object Paused : JobResult()
     object MaxRepetitionsReached : JobResult()
     data class Failure(val exception: Throwable) : JobResult()
+    object ConcurrencyLimitReached : JobResult()
 }
