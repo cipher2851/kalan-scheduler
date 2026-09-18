@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicInteger
 
 class KalanSchedulerTest {
 
@@ -564,6 +565,35 @@ class KalanSchedulerTest {
 
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         assertEquals(expectedValue, scheduler.getLastResult("result-job"))
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test per-job concurrency limit`() {
+        val scheduler = KalanScheduler(corePoolSize = 10)
+        val executionCount = AtomicInteger(0)
+        val latch = CountDownLatch(3)
+        
+        // Schedule a periodic job with a concurrency limit of 1
+        scheduler.scheduleJob("concurrent-job") {
+            every(10)
+            withConcurrencyLimit(1)
+            execute {
+                executionCount.incrementAndGet()
+                Thread.sleep(100)
+                latch.countDown()
+                null
+            }
+        }
+
+        // Wait for a few cycles. If concurrency limit works, they should run sequentially
+        // and not overlap. We check that the number of concurrent runs doesn't exceed 1
+        // implicitly by seeing if they take at least (count * 100ms).
+        val start = System.currentTimeMillis()
+        assertTrue(latch.await(2, TimeUnit.SECONDS))
+        val duration = System.currentTimeMillis() - start
+        
+        assertTrue(duration >= 300, "Jobs should have run sequentially due to concurrency limit")
         scheduler.shutdown()
     }
 }

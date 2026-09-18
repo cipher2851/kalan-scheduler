@@ -283,7 +283,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun getJobInfo(id: String): JobInfo?
         = jobInstances[id]?.let {
-            JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority, it.tags, it.metadata)
+            JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority, it.tags, it.metadata, it.timeoutMs)
         }
 
     fun listAllJobs(): List<JobInfo> {
@@ -405,7 +405,8 @@ data class JobInfo(
     val intervalMs: Long?,
     val priority: Int,
     val tags: Set<String>,
-    val metadata: Map<String, Any>
+    val metadata: Map<String, Any>,
+    val timeoutMs: Long?
 )
 
 class DefaultKalanThreadFactory : ThreadFactory {
