@@ -73,11 +73,46 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         if (policy != null && job.getFailureCount() <= policy.maxRetries) {
             scheduler.schedule({
                 try {
-                    job.execute()
+                    // For retries, we use the same concurrency logic as a normal run
+                    runJobInternal(job)
                 } catch (retryEx: Throwable) {
                     handleFailure(job, retryEx)
                 }
             }, policy.delayMs, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    private fun runJobInternal(job: Job) {
+        val wrappedAction = wrapExecution(job) {
+            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
+            job.execute()
+        }
+
+        if (job.dependsOn != null && !isDependencySatisfied(job.id)) {
+            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            return
+        }
+
+        if (currentGlobalExecutions.get() >= maxGlobalConcurrency) {
+            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            return
+        }
+
+        if (!job.tryAcquireSlot()) {
+            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            return
+        }
+
+        currentGlobalExecutions.incrementAndGet()
+        try {
+            wrappedAction()
+        } finally {
+            currentGlobalExecutions.decrementAndGet()
+            job.releaseSlot()
+            if (job.intervalMs == null && job.isCompleted()) {
+                notifyListeners(JobEvent(JobEvent.Type.COMPLETED, job.id))
+                activeJobs.remove(job.id)
+            }
         }
     }
 
@@ -87,50 +122,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
         jobInstances[id] = job
 
-        val wrappedAction = wrapExecution(job) {
-            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
-            job.execute()
-        }
-        
-        val task = object : Runnable {
-            override fun run() {
-                try {
-                    if (job.dependsOn != null) {
-                        if (!isDependencySatisfied(job.id)) {
-                            scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
-                            return
-                        }
-                    }
-
-                    if (currentGlobalExecutions.get() >= maxGlobalConcurrency) {
-                        scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
-                        return
-                    }
-
-                    if (!job.tryAcquireSlot()) {
-                        scheduler.schedule(this, 100, TimeUnit.MILLISECONDS)
-                        return
-                    }
-
-                    currentGlobalExecutions.incrementAndGet()
-                    try {
-                        wrappedAction()
-                    } finally {
-                        currentGlobalExecutions.decrementAndGet()
-                        job.releaseSlot()
-                    }
-                } catch (e: Throwable) {
-                    errorHandler(e)
-                } finally {
-                    if (job.intervalMs == null && job.isCompleted()) {
-                        notifyListeners(JobEvent(JobEvent.Type.COMPLETED, job.id))
-                        activeJobs.remove(id)
-                    }
-                }
+        val future = scheduler.schedule({ 
+            try {
+                runJobInternal(job)
+            } catch (e: Throwable) {
+                errorHandler(e)
             }
-        }
-
-        val future = scheduler.schedule(task, delayMs, TimeUnit.MILLISECONDS)
+        }, delayMs, TimeUnit.MILLISECONDS)
+        
         activeJobs[id] = future
     }
 
