@@ -240,6 +240,11 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
+    fun executeNow(id: String) {
+        val job = jobRepository.findById(id) ?: throw IllegalArgumentException("Job not found: $id")
+        priorityQueue.put(job)
+    }
+
     fun updateJob(id: String, newAction: (String) -> Any?) {
         jobRepository.findById(id)?.action = newAction
     }

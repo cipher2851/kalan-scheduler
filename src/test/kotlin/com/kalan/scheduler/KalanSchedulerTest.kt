@@ -631,4 +631,27 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test executeNow`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        
+        // Schedule a job far in the future
+        scheduler.schedule("manual-job", 100000) {
+            latch.countDown()
+            null
+        }
+        
+        // Verify it hasn't run yet
+        assertFalse(latch.await(200, TimeUnit.MILLISECONDS))
+        assertEquals(0, scheduler.getExecutionCount("manual-job"))
+        
+        // Trigger execution now
+        scheduler.executeNow("manual-job")
+        
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(1, scheduler.getExecutionCount("manual-job"))
+        scheduler.shutdown()
+    }
 }
