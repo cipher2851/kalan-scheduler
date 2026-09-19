@@ -6,10 +6,9 @@ import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = DefaultKalanThreadFactory()) {
+class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = DefaultKalanThreadFactory(), private val jobRepository: JobRepository = InMemoryJobRepository()) {
     private val scheduler = ScheduledThreadPoolExecutor(corePoolSize, threadFactory)
     private val activeJobs = ConcurrentHashMap<String, ScheduledFuture<*>>()
-    private val jobInstances = ConcurrentHashMap<String, Job>()
     private val running = AtomicBoolean(true)
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
     private val currentGlobalExecutions = AtomicInteger(0)
@@ -120,7 +119,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         if (!running.get()) return
         
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
-        jobInstances[id] = job
+        jobRepository.save(job)
 
         val future = scheduler.schedule({ 
             try {
@@ -159,7 +158,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
-        jobInstances[id] = job
+        jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
@@ -191,7 +190,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         if (!running.get()) return
 
         val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
-        jobInstances[id] = job
+        jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
@@ -220,33 +219,33 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun updateJob(id: String, newAction: (String) -> Any?) {
-        jobInstances[id]?.action = newAction
+        jobRepository.findById(id)?.action = newAction
     }
 
     fun updateJobPriority(id: String, priority: Int) {
-        jobInstances[id]?.priority = priority
+        jobRepository.findById(id)?.priority = priority
     }
 
     fun updateJobTimeout(id: String, timeoutMs: Long?) {
-        jobInstances[id]?.timeoutMs = timeoutMs
+        jobRepository.findById(id)?.timeoutMs = timeoutMs
     }
 
     fun pauseJob(id: String) {
-        jobInstances[id]?.setPaused(true)
+        jobRepository.findById(id)?.setPaused(true)
     }
 
     fun resumeJob(id: String) {
-        jobInstances[id]?.setPaused(false)
+        jobRepository.findById(id)?.setPaused(false)
     }
 
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
-        jobInstances.remove(id)
+        jobRepository.remove(id)
         notifyListeners(JobEvent(JobEvent.Type.CANCELLED, id))
     }
 
     fun cancelByTag(tag: String) {
-        jobInstances.values.filter { it.tags.contains(tag) }
+        jobRepository.findByTag(tag)
             .map { it.id }
             .forEach { cancel(it) }
     }
@@ -257,7 +256,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun getJobStatus(id: String): JobStatus {
-        val job = jobInstances[id]
+        val job = jobRepository.findById(id)
         if (job != null && job.isCompleted()) return JobStatus.COMPLETED
         
         val future = activeJobs[id]
@@ -270,41 +269,41 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun getExecutionCount(id: String): Int {
-        return jobInstances[id]?.getExecutionCount() ?: 0
+        return jobRepository.findById(id)?.getExecutionCount() ?: 0
     }
 
     fun getLastExecutionTime(id: String): Instant? {
-        return jobInstances[id]?.getLastExecutionTime()
+        return jobRepository.findById(id)?.getLastExecutionTime()
     }
 
     fun getLastResult(id: String): Any? {
-        return jobInstances[id]?.getLastResult()
+        return jobRepository.findById(id)?.getLastResult()
     }
 
     fun getJobInfo(id: String): JobInfo?
-        = jobInstances[id]?.let {
+        = jobRepository.findById(id)?.let {
             JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority, it.tags, it.metadata, it.timeoutMs)
         }
 
     fun listAllJobs(): List<JobInfo> {
-        return jobInstances.keys.mapNotNull { getJobInfo(it) }
+        return jobRepository.findAll().mapNotNull { getJobInfo(it.id) }
     }
 
     fun listJobsByTag(tag: String): List<JobInfo> {
-        return jobInstances.values.filter { it.tags.contains(tag) }
+        return jobRepository.findByTag(tag)
             .mapNotNull { getJobInfo(it.id) }
     }
 
     fun shutdown() {
         running.set(false)
         scheduler.shutdownNow()
-        jobInstances.clear()
+        jobRepository.clear()
         activeJobs.clear()
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
 
-    fun getTotalJobCount(): Int = jobInstances.size
+    fun getTotalJobCount(): Int = jobRepository.findAll().size
 
     fun getActiveJobIds(): Set<String> = activeJobs.keys.toSet()
 
@@ -319,9 +318,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun isDependencySatisfied(jobId: String): Boolean {
-        val job = jobInstances[jobId] ?: return true
+        val job = jobRepository.findById(jobId) ?: return true
         val depId = job.dependsOn ?: return true
-        return jobInstances[depId]?.isCompleted() ?: false
+        return jobRepository.findById(depId)?.isCompleted() ?: false
     }
 }
 
