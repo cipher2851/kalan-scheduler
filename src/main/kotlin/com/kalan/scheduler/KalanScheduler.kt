@@ -12,6 +12,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private val running = AtomicBoolean(true)
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
     private val currentGlobalExecutions = AtomicInteger(0)
+    private val jobGroups = ConcurrentHashMap<String, MutableSet<String>>()
     
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
@@ -299,6 +300,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         scheduler.shutdownNow()
         jobRepository.clear()
         activeJobs.clear()
+        jobGroups.clear()
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
@@ -321,6 +323,31 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val job = jobRepository.findById(jobId) ?: return true
         val depId = job.dependsOn ?: return true
         return jobRepository.findById(depId)?.isCompleted() ?: false
+    }
+
+    fun addJobToGroup(groupId: String, jobId: String) {
+        jobGroups.computeIfAbsent(groupId) { ConcurrentHashMap.newKeySet() }.add(jobId)
+    }
+
+    fun removeJobFromGroup(groupId: String, jobId: String) {
+        jobGroups[groupId]?.remove(jobId)
+    }
+
+    fun pauseGroup(groupId: String) {
+        jobGroups[groupId]?.forEach { pauseJob(it) }
+    }
+
+    fun resumeGroup(groupId: String) {
+        jobGroups[groupId]?.forEach { resumeJob(it) }
+    }
+
+    fun cancelGroup(groupId: String) {
+        jobGroups[groupId]?.forEach { cancel(it) }
+        jobGroups.remove(groupId)
+    }
+
+    fun getJobsInGroup(groupId: String): List<JobInfo> {
+        return jobGroups[groupId]?.mapNotNull { getJobInfo(it) } ?: emptyList()
     }
 }
 

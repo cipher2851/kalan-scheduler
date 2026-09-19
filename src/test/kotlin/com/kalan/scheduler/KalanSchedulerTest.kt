@@ -596,4 +596,39 @@ class KalanSchedulerTest {
         assertTrue(duration >= 300, "Jobs should have run sequentially due to concurrency limit")
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test job groups`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+
+        scheduler.scheduleAtFixedRate("group-job-1", 0, 100) {
+            latch.countDown()
+            null
+        }
+        scheduler.scheduleAtFixedRate("group-job-2", 0, 100) {
+            latch.countDown()
+            null
+        }
+
+        scheduler.addJobToGroup("my-group", "group-job-1")
+        scheduler.addJobToGroup("my-group", "group-job-2")
+
+        assertEquals(2, scheduler.getJobsInGroup("my-group").size)
+
+        scheduler.pauseGroup("my-group")
+        val countAfterPause = scheduler.getExecutionCount("group-job-1") + scheduler.getExecutionCount("group-job-2")
+        
+        Thread.sleep(200)
+        assertEquals(countAfterPause, scheduler.getExecutionCount("group-job-1") + scheduler.getExecutionCount("group-job-2"))
+
+        scheduler.resumeGroup("my-group")
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+
+        scheduler.cancelGroup("my-group")
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("group-job-1"))
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("group-job-2"))
+        
+        scheduler.shutdown()
+    }
 }
