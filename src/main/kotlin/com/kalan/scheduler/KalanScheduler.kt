@@ -14,8 +14,30 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private val currentGlobalExecutions = AtomicInteger(0)
     private val jobGroups = ConcurrentHashMap<String, MutableSet<String>>()
     
+    // Queue for jobs that are ready to run, sorted by priority
+    private val priorityQueue = PriorityBlockingQueue<Job>()
+    private val workerExecutor = ThreadPoolExecutor(
+        corePoolSize, corePoolSize, 0L, TimeUnit.MILLISECONDS, 
+        LinkedBlockingQueue(), threadFactory
+    )
+
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
+
+    init {
+        // Start a dispatcher thread to move jobs from priorityQueue to workerExecutor
+        Thread({
+            while (running.get()) {
+                try {
+                    val job = priorityQueue.take()
+                    workerExecutor.execute { runJobInternal(job) }
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+        }, "kalan-priority-dispatcher").start()
+    }
 
     fun addEventListener(listener: JobEventListener) {
         listeners.add(listener)
@@ -45,7 +67,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                     } catch (e: Throwable) {
                         throw e
                     }
-                }, scheduler)
+                }, workerExecutor)
                 
                 try {
                     future.get(timeout, TimeUnit.MILLISECONDS)
@@ -73,8 +95,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         if (policy != null && job.getFailureCount() <= policy.maxRetries) {
             scheduler.schedule({
                 try {
-                    // For retries, we use the same concurrency logic as a normal run
-                    runJobInternal(job)
+                    priorityQueue.put(job)
                 } catch (retryEx: Throwable) {
                     handleFailure(job, retryEx)
                 }
@@ -89,17 +110,17 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
 
         if (job.dependsOn != null && !isDependencySatisfied(job.id)) {
-            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
         if (currentGlobalExecutions.get() >= maxGlobalConcurrency) {
-            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
         if (!job.tryAcquireSlot()) {
-            scheduler.schedule({ runJobInternal(job) }, 100, TimeUnit.MILLISECONDS)
+            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
@@ -124,7 +145,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val future = scheduler.schedule({ 
             try {
-                runJobInternal(job)
+                priorityQueue.put(job)
             } catch (e: Throwable) {
                 errorHandler(e)
             }
@@ -298,6 +319,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun shutdown() {
         running.set(false)
         scheduler.shutdownNow()
+        workerExecutor.shutdownNow()
         jobRepository.clear()
         activeJobs.clear()
         jobGroups.clear()
