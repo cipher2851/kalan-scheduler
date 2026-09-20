@@ -441,8 +441,16 @@ class JobBuilder(val id: String) {
         this.retryPolicy = RetryPolicy(maxRetries, delayMs)
     }
 
+    fun retry(max: Int, every: Long) {
+        withRetryPolicy(max, every)
+    }
+
     fun withConcurrencyLimit(limit: Int) {
         this.concurrencyLimit = limit
+    }
+
+    fun limitConcurrency(limit: Int) {
+        withConcurrencyLimit(limit)
     }
 }
 

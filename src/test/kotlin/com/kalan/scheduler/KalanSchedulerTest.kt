@@ -654,4 +654,26 @@ class KalanSchedulerTest {
         assertEquals(1, scheduler.getExecutionCount("manual-job"))
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test fluent DSL for retry and limit`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+
+        scheduler.scheduleJob("fluent-job") {
+            retry(max = 3, every = 10)
+            limitConcurrency(2)
+            execute {
+                latch.countDown()
+                null
+            }
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        
+        // We can't easily check internal Job fields via JobInfo without adding them
+        // but we verify the job executes and the DSL doesn't crash
+        assertEquals(1, scheduler.getExecutionCount("fluent-job"))
+        scheduler.shutdown()
+    }
 }
