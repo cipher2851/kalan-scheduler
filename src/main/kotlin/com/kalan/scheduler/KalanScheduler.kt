@@ -109,7 +109,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             job.execute()
         }
 
-        if (job.dependsOn != null && !isDependencySatisfied(job.id)) {
+        if (!isDependencySatisfied(job.id)) {
             scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
