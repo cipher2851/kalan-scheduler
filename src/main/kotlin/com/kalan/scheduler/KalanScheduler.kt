@@ -405,6 +405,16 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun getJobsInGroup(groupId: String): List<JobInfo> {
         return jobGroups[groupId]?.mapNotNull { getJobInfo(it) } ?: emptyList()
     }
+
+    fun getHealthStatus(): SchedulerHealth {
+        return SchedulerHealth(
+            isRunning = running.get(),
+            activeJobCount = activeJobs.size,
+            queuedJobCount = priorityQueue.size,
+            workerPoolActiveThreads = workerExecutor.activeCount,
+            workerPoolQueueSize = workerExecutor.queue.size
+        )
+    }
 }
 
 class JobBuilder(val id: String) {
@@ -502,6 +512,14 @@ data class JobInfo(
     val tags: Set<String>,
     val metadata: Map<String, Any>,
     val timeoutMs: Long?
+)
+
+data class SchedulerHealth(
+    val isRunning: Boolean,
+    val activeJobCount: Int,
+    val queuedJobCount: Int,
+    val workerPoolActiveThreads: Int,
+    val workerPoolQueueSize: Int
 )
 
 class DefaultKalanThreadFactory : ThreadFactory {

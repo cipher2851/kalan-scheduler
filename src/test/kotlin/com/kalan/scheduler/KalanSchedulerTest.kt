@@ -696,4 +696,19 @@ class KalanSchedulerTest {
         assertTrue(scheduler.getExecutionCount("cron-job") >= 2)
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test scheduler health status`() {
+        val scheduler = KalanScheduler()
+        
+        scheduler.schedule("health-job", 100) { null }
+        
+        val health = scheduler.getHealthStatus()
+        assertTrue(health.isRunning)
+        assertEquals(1, health.activeJobCount)
+        
+        scheduler.shutdown()
+        val postShutdownHealth = scheduler.getHealthStatus()
+        assertFalse(postShutdownHealth.isRunning)
+    }
 }
