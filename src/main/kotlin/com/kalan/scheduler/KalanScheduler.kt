@@ -2,6 +2,8 @@ package com.kalan.scheduler
 
 import java.time.Duration
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.ZoneId
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -240,6 +242,32 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
+    fun scheduleCron(id: String, cronExpr: CronExpression, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+        if (!running.get()) return
+
+        val job = Job(id, action, Instant.now(), null, priority, timeoutMs, tags, metadata, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
+        jobRepository.save(job)
+
+        fun scheduleNext() {
+            val nextRun = cronExpr.nextExecution(ZonedDateTime.now(ZoneId.systemDefault()))
+            val delay = Duration.between(ZonedDateTime.now(ZoneId.systemDefault()), nextRun).toMillis()
+            
+            val future = scheduler.schedule({
+                try {
+                    priorityQueue.put(job)
+                    // Re-schedule next execution after adding to queue
+                    scheduleNext()
+                } catch (e: Throwable) {
+                    errorHandler(e)
+                }
+            }, if (delay < 0) 0 else delay, TimeUnit.MILLISECONDS)
+            
+            activeJobs[id] = future
+        }
+
+        scheduleNext()
+    }
+
     fun executeNow(id: String) {
         val job = jobRepository.findById(id) ?: throw IllegalArgumentException("Job not found: $id")
         priorityQueue.put(job)
@@ -339,6 +367,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
+            builder.cronExpression != null -> scheduleCron(id, builder.cronExpression!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.retryPolicy, builder.concurrencyLimit, builder.action)
             builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.action)
             builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.action)
             builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.action)
@@ -383,6 +412,7 @@ class JobBuilder(val id: String) {
     var fixedRate: Long? = null
     var fixedDelay: Long? = null
     var atTime: Instant? = null
+    var cronExpression: CronExpression? = null
     var priority: Int = 0
     var timeoutMs: Long? = null
     var tags: Set<String> = emptySet()
@@ -407,6 +437,10 @@ class JobBuilder(val id: String) {
 
     fun at(time: Instant) {
         this.atTime = time
+    }
+
+    fun cron(expr: CronExpression) {
+        this.cronExpression = expr
     }
 
     fun startAfter(ms: Long) {
@@ -489,4 +523,35 @@ data class JobEvent(
 
 interface JobEventListener {
     fun onEvent(event: JobEvent)
+}
+
+data class CronExpression(
+    val minute: Int = -1, // -1 for any
+    val hour: Int = -1,
+    val dayOfMonth: Int = -1,
+    val month: Int = -1,
+    val dayOfWeek: Int = -1
+) {
+    fun nextExecution(now: ZonedDateTime): ZonedDateTime {
+        var next = now.plusSeconds(1)
+        while (true) {
+            if (matches(next)) return next
+            if (next.hour == 23 && next.minute == 59 && next.second == 59) {
+                next = next.plusDays(1).withHour(0).withMinute(0).withSecond(0).withNano(0)
+            } else {
+                next = next.plusSeconds(1)
+            }
+            // Safety break to prevent infinite loop if expression is impossible
+            if (next.year > now.year + 1) throw IllegalArgumentException("No matching execution time found within one year")
+        }
+    }
+
+    private fun matches(dt: ZonedDateTime): Boolean {
+        if (minute != -1 && dt.minute != minute) return false
+        if (hour != -1 && dt.hour != hour) return false
+        if (dayOfMonth != -1 && dt.dayOfMonth != dayOfMonth) return false
+        if (month != -1 && dt.monthValue != month) return false
+        if (dayOfWeek != -1 && dt.dayOfWeek.value != dayOfWeek) return false
+        return true
+    }
 }

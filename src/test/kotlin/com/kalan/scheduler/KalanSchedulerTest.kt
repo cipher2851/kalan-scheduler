@@ -676,4 +676,24 @@ class KalanSchedulerTest {
         assertEquals(1, scheduler.getExecutionCount("fluent-job"))
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test cron scheduling`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+
+        // Schedule to run every minute (or just matching current) 
+        // For test purposes, we use an expression that matches frequently
+        scheduler.scheduleJob("cron-job") {
+            cron(CronExpression(minute = -1, hour = -1)) 
+            execute {
+                latch.countDown()
+                null
+            }
+        }
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS))
+        assertTrue(scheduler.getExecutionCount("cron-job") >= 2)
+        scheduler.shutdown()
+    }
 }
