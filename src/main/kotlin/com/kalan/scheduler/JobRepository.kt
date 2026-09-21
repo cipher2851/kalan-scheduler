@@ -8,6 +8,7 @@ interface JobRepository {
     fun remove(id: String): Job?
     fun findAll(): Collection<Job>
     fun findByTag(tag: String): List<Job>
+    fun findByMetadata(key: String, value: Any): List<Job>
     fun clear()
 }
 
@@ -26,6 +27,10 @@ class InMemoryJobRepository : JobRepository {
 
     override fun findByTag(tag: String): List<Job> {
         return jobs.values.filter { it.tags.contains(tag) }
+    }
+
+    override fun findByMetadata(key: String, value: Any): List<Job> {
+        return jobs.values.filter { it.metadata[key] == value }
     }
 
     override fun clear() {
