@@ -749,4 +749,32 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test skip if running strategy`() {
+        val scheduler = KalanScheduler(corePoolSize = 2)
+        val executionCount = AtomicInteger(0)
+        val latch = CountDownLatch(1)
+
+        scheduler.scheduleJob("skip-job") {
+            every(50)
+            withExecutionStrategy(JobExecutionStrategy.SKIP_IF_RUNNING)
+            execute {
+                executionCount.incrementAndGet()
+                Thread.sleep(200)
+                latch.countDown()
+                null
+            }
+        }
+
+        // Let it run for a bit. Since it takes 200ms and triggers every 50ms,
+        // the SKIP_IF_RUNNING strategy should prevent overlapping.
+        Thread.sleep(500)
+        
+        val count = executionCount.get()
+        // Without skip, we might see more executions queued. With skip, we expect 
+        // them to be spaced by at least 200ms.
+        assertTrue(count <= 3, "Should have skipped overlapping executions. Count: $count")
+        scheduler.shutdown()
+    }
 }

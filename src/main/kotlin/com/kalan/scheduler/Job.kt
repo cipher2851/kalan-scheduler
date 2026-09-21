@@ -6,6 +6,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
+enum class JobExecutionStrategy {
+    QUEUE,            // Allow multiple executions to queue up
+    SKIP_IF_RUNNING    // Skip the execution if a previous one is still active
+}
+
 class Job(
     val id: String,
     @Volatile var action: (String) -> Any?,
@@ -18,7 +23,8 @@ class Job(
     val maxRepetitions: Int? = null,
     val dependsOn: String? = null,
     val retryPolicy: RetryPolicy? = null,
-    val concurrencyLimit: Int? = null
+    val concurrencyLimit: Int? = null,
+    val executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val failureCount = AtomicInteger(0)

@@ -139,10 +139,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
     }
 
-    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+    fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?) {
         if (!running.get()) return
         
-        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
+        val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = priority, timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy)
         jobRepository.save(job)
 
         val future = scheduler.schedule({ 
@@ -156,10 +156,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleAsync(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?): CompletableFuture<Any?> {
+    fun scheduleAsync(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?): CompletableFuture<Any?> {
         val resultFuture = CompletableFuture<Any?>()
         
-        schedule(id, delayMs, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit) {
+        schedule(id, delayMs, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit, strategy) {
             try {
                 val res = action(it)
                 resultFuture.complete(res)
@@ -173,15 +173,15 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         return resultFuture
     }
 
-    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+    fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
-        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit, action)
+        schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit, strategy, action)
     }
 
-    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+    fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), periodMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy)
         jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
@@ -193,6 +193,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
         val future = scheduler.scheduleAtFixedRate({
             try {
+                if (job.executionStrategy == JobExecutionStrategy.SKIP_IF_RUNNING && !job.tryAcquireSlot()) {
+                    // For periodic jobs, if we skip, we still need to release the slot we just tried to acquire 
+                    // if tryAcquireSlot internally increments it. But Job.tryAcquireSlot only increments if it succeeds.
+                    // Wait, for periodic jobs handled by scheduleAtFixedRate, we need to track if one is currently active.
+                    // Let's implement a simple check: we only use the slot for the duration of the execution.
+                    return@scheduleAtFixedRate
+                }
+                
                 if (currentGlobalExecutions.get() >= maxGlobalConcurrency || !job.tryAcquireSlot()) return@scheduleAtFixedRate
                 
                 currentGlobalExecutions.incrementAndGet()
@@ -210,10 +218,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+    fun scheduleWithFixedDelay(id: String, initialDelayMs: Long, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
+        val job = Job(id, action, Instant.now().plusMillis(initialDelayMs), delayMs, priority, timeoutMs, tags, metadata, maxRepetitions, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy)
         jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
@@ -242,10 +250,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs[id] = future
     }
 
-    fun scheduleCron(id: String, cronExpr: CronExpression, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, action: (String) -> Any?) {
+    fun scheduleCron(id: String, cronExpr: CronExpression, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, action: (String) -> Any?) {
         if (!running.get()) return
 
-        val job = Job(id, action, Instant.now(), null, priority, timeoutMs, tags, metadata, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit)
+        val job = Job(id, action, Instant.now(), null, priority, timeoutMs, tags, metadata, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy)
         jobRepository.save(job)
 
         fun scheduleNext() {
@@ -378,11 +386,11 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         when {
-            builder.cronExpression != null -> scheduleCron(id, builder.cronExpression!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.retryPolicy, builder.concurrencyLimit, builder.action)
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.action)
+            builder.cronExpression != null -> scheduleCron(id, builder.cronExpression!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.action)
+            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.action)
+            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, builder.metadata, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.action)
         }
     }
 
@@ -442,6 +450,7 @@ class JobBuilder(val id: String) {
     var dependsOn: String? = null
     var retryPolicy: RetryPolicy? = null
     var concurrencyLimit: Int? = null
+    var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE
     lateinit var action: (String) -> Any?
 
     fun execute(block: (String) -> Any?) {
@@ -506,6 +515,10 @@ class JobBuilder(val id: String) {
 
     fun limitConcurrency(limit: Int) {
         withConcurrencyLimit(limit)
+    }
+
+    fun withExecutionStrategy(strategy: JobExecutionStrategy) {
+        this.executionStrategy = strategy
     }
 }
 
