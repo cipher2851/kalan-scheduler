@@ -728,4 +728,25 @@ class KalanSchedulerTest {
         val postShutdownHealth = scheduler.getHealthStatus()
         assertFalse(postShutdownHealth.isRunning)
     }
+
+    @Test
+    fun `test runJobsParallel`() {
+        val scheduler = KalanScheduler(corePoolSize = 4)
+        val latch = CountDownLatch(3)
+        
+        scheduler.scheduleJob("p1") { execute { latch.countDown(); "res1" } }
+        scheduler.scheduleJob("p2") { execute { latch.countDown(); "res2" } }
+        scheduler.scheduleJob("p3") { execute { latch.countDown(); "res3" } }
+        
+        val futures = scheduler.runJobsParallel(listOf("p1", "p2", "p3"), 1, TimeUnit.SECONDS)
+        
+        CompletableFuture.allOf(*futures.toTypedArray()).join()
+        
+        assertEquals("res1", futures[0].get())
+        assertEquals("res2", futures[1].get())
+        assertEquals("res3", futures[2].get())
+        assertEquals(0, latch.count)
+        
+        scheduler.shutdown()
+    }
 }

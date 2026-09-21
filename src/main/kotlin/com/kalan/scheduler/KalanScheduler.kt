@@ -273,6 +273,17 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         priorityQueue.put(job)
     }
 
+    fun runJobsParallel(ids: List<String>, timeout: Long, unit: TimeUnit): List<CompletableFuture<Any?>> {
+        return ids.map { id ->
+            val job = jobRepository.findById(id) ?: throw IllegalArgumentException("Job not found: $id")
+            CompletableFuture.supplyAsync({
+                job.execute().let { result ->
+                    if (result is JobResult.Success) result.value else throw RuntimeException("Job $id failed with result $result")
+                }
+            }, workerExecutor)
+        }
+    }
+
     fun updateJob(id: String, newAction: (String) -> Any?) {
         jobRepository.findById(id)?.action = newAction
     }
