@@ -569,6 +569,23 @@ class KalanSchedulerTest {
     }
 
     @Test
+    fun `test job result in JobInfo`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        val expectedValue = "Info-Result"
+
+        scheduler.schedule("info-result-job", 0) {
+            latch.countDown()
+            expectedValue
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        val info = scheduler.getJobInfo("info-result-job")
+        assertEquals(expectedValue, info?.lastResult)
+        scheduler.shutdown()
+    }
+
+    @Test
     fun `test per-job concurrency limit`() {
         val scheduler = KalanScheduler(corePoolSize = 10)
         val executionCount = AtomicInteger(0)
