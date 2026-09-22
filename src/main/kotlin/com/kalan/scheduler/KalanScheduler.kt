@@ -324,6 +324,12 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             .forEach { cancel(it) }
     }
 
+    fun cancelByMetadata(key: String, value: Any) {
+        jobRepository.findByMetadata(key, value)
+            .map { it.id }
+            .forEach { cancel(it) }
+    }
+
     fun isJobActive(id: String): Boolean {
         val future = activeJobs[id]
         return future != null && !future.isDone

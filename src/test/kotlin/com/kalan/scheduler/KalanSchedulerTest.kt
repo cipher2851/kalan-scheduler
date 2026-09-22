@@ -777,4 +777,33 @@ class KalanSchedulerTest {
         assertTrue(count <= 3, "Should have skipped overlapping executions. Count: $count")
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test cancel by metadata`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        
+        scheduler.scheduleJob("meta-cancel-1") {
+            withMetadata(mapOf("cluster" to "us-east-1"))
+            execute { latch.countDown(); null }
+        }
+        scheduler.scheduleJob("meta-cancel-2") {
+            withMetadata(mapOf("cluster" to "us-east-1"))
+            execute { latch.countDown(); null }
+        }
+        scheduler.scheduleJob("meta-keep") {
+            withMetadata(mapOf("cluster" to "us-west-2"))
+            execute { latch.countDown(); null }
+        }
+
+        scheduler.cancelByMetadata("cluster", "us-east-1")
+        
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        assertEquals(1, latch.count)
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("meta-cancel-1"))
+        assertEquals(JobStatus.CANCELLED, scheduler.getJobStatus("meta-cancel-2"))
+        assertEquals(JobStatus.COMPLETED, scheduler.getJobStatus("meta-keep"))
+        
+        scheduler.shutdown()
+    }
 }
