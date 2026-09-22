@@ -806,4 +806,18 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test Job execute returns Failure on exception`() {
+        val job = Job(
+            id = "fail-job",
+            action = { throw RuntimeException("Expected Failure") },
+            startTime = Instant.now()
+        )
+        
+        val result = job.execute()
+        assertTrue(result is JobResult.Failure)
+        assertEquals("Expected Failure", (result as JobResult.Failure).exception.message)
+        assertEquals(1, job.getFailureCount())
+    }
 }

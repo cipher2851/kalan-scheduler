@@ -75,16 +75,22 @@ class Job(
         }
 
         val executionId = UUID.randomUUID().toString()
-        val result = action(executionId)
         
-        lastResult.set(result)
-        executionCount.incrementAndGet()
-        lastExecutionTime.set(Instant.now())
-        
-        if (intervalMs == null) {
-            markCompleted()
+        return try {
+            val result = action(executionId)
+            
+            lastResult.set(result)
+            executionCount.incrementAndGet()
+            lastExecutionTime.set(Instant.now())
+            
+            if (intervalMs == null) {
+                markCompleted()
+            }
+            JobResult.Success(result)
+        } catch (e: Throwable) {
+            incrementFailure()
+            JobResult.Failure(e)
         }
-        return JobResult.Success(result)
     }
 
     fun getExecutionCount(): Int = executionCount.get()
