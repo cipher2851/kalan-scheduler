@@ -194,10 +194,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val future = scheduler.scheduleAtFixedRate({
             try {
                 if (job.executionStrategy == JobExecutionStrategy.SKIP_IF_RUNNING && !job.tryAcquireSlot()) {
-                    // For periodic jobs, if we skip, we still need to release the slot we just tried to acquire 
-                    // if tryAcquireSlot internally increments it. But Job.tryAcquireSlot only increments if it succeeds.
-                    // Wait, for periodic jobs handled by scheduleAtFixedRate, we need to track if one is currently active.
-                    // Let's implement a simple check: we only use the slot for the duration of the execution.
                     return@scheduleAtFixedRate
                 }
                 
@@ -263,7 +259,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             val future = scheduler.schedule({
                 try {
                     priorityQueue.put(job)
-                    // Re-schedule next execution after adding to queue
                     scheduleNext()
                 } catch (e: Throwable) {
                     errorHandler(e)
@@ -451,7 +446,7 @@ class JobBuilder(val id: String) {
     var priority: Int = 0
     var timeoutMs: Long? = null
     var tags: Set<String> = emptySet()
-    var metadata: Map<String, Any> = emptyMap()
+    var metadata: MutableMap<String, Any> = mutableMapOf()
     var maxRepetitions: Int? = null
     var dependsOn: String? = null
     var retryPolicy: RetryPolicy? = null
@@ -496,7 +491,11 @@ class JobBuilder(val id: String) {
     }
 
     fun withMetadata(metadata: Map<String, Any>) {
-        this.metadata = metadata
+        this.metadata.putAll(metadata)
+    }
+
+    fun addMetadata(key: String, value: Any) {
+        this.metadata[key] = value
     }
 
     fun repeatAtMost(times: Int) {
@@ -590,7 +589,6 @@ data class CronExpression(
             } else {
                 next = next.plusSeconds(1)
             }
-            // Safety break to prevent infinite loop if expression is impossible
             if (next.year > now.year + 1) throw IllegalArgumentException("No matching execution time found within one year")
         }
     }

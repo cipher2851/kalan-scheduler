@@ -97,6 +97,9 @@ class Job(
         return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
     }
 
+    @Suppress("UNCHECKED_CAST")
+    fun <T> getMetadataValue(key: String): T? = metadata[key] as? T
+
     override fun compareTo(other: Job): Int {
         return other.priority.compareTo(this.priority) // Higher priority first
     }
