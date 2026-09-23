@@ -2,6 +2,7 @@ package com.kalan.scheduler
 
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -24,7 +25,8 @@ class Job(
     val dependsOn: String? = null,
     val retryPolicy: RetryPolicy? = null,
     val concurrencyLimit: Int? = null,
-    val executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE
+    val executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE,
+    val customExecutor: Executor? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)
     private val failureCount = AtomicInteger(0)
