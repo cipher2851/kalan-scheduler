@@ -467,6 +467,14 @@ class JobBuilder(val id: String) {
         this.fixedRate = ms
     }
 
+    fun everyHour() {
+        this.fixedRate = 3600000L
+    }
+
+    fun everyDay() {
+        this.fixedRate = 86400000L
+    }
+
     fun withDelay(ms: Long) {
         this.fixedDelay = ms
     }
