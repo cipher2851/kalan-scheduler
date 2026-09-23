@@ -820,4 +820,48 @@ class KalanSchedulerTest {
         assertEquals("Expected Failure", (result as JobResult.Failure).exception.message)
         assertEquals(1, job.getFailureCount())
     }
+
+    @Test
+    fun `test DSL group assignment`() {
+        val scheduler = KalanScheduler()
+        
+        scheduler.scheduleJob("group-dsl-1") {
+            inGroup("dsl-group")
+            execute { null }
+        }
+        scheduler.scheduleJob("group-dsl-2") {
+            inGroup("dsl-group")
+            execute { null }
+        }
+        
+        assertEquals(2, scheduler.getJobsInGroup("dsl-group").size)
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test global pause and resume`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        var count = 0
+
+        scheduler.scheduleAtFixedRate("global-1", 0, 50) {
+            count++; latch.countDown(); null
+        }
+        scheduler.scheduleAtFixedRate("global-2", 0, 50) {
+            count++; latch.countDown(); null
+        }
+
+        assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
+        val countBeforePause = count
+        
+        scheduler.pauseAllJobs()
+        Thread.sleep(200)
+        assertEquals(countBeforePause, count)
+
+        scheduler.resumeAllJobs()
+        Thread.sleep(200)
+        assertTrue(count > countBeforePause)
+        
+        scheduler.shutdown()
+    }
 }

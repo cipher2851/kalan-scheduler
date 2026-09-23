@@ -310,6 +310,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.findById(id)?.setPaused(false)
     }
 
+    fun pauseAllJobs() {
+        jobRepository.findAll().forEach { pauseJob(it.id) }
+    }
+
+    fun resumeAllJobs() {
+        jobRepository.findAll().forEach { resumeJob(it.id) }
+    }
+
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
         jobRepository.remove(id)
@@ -390,13 +398,17 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun scheduleJob(id: String, block: JobBuilder.() -> Unit) {
         val builder = JobBuilder(id).apply(block)
         val meta = builder.metadata.toMap()
+        
+        val jobId = id
         when {
-            builder.cronExpression != null -> scheduleCron(id, builder.cronExpression!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.fixedRate != null -> scheduleAtFixedRate(id, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(id, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.atTime != null -> scheduleAt(id, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            else -> schedule(id, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+            builder.cronExpression != null -> scheduleCron(jobId, builder.cronExpression!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+            builder.fixedRate != null -> scheduleAtFixedRate(jobId, builder.initialDelay, builder.fixedRate!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+            builder.fixedDelay != null -> scheduleWithFixedDelay(jobId, builder.initialDelay, builder.fixedDelay!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+            builder.atTime != null -> scheduleAt(jobId, builder.atTime!!, builder.priority, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+            else -> schedule(jobId, builder.initialDelay, builder.priority, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
         }
+        
+        builder.group?.let { addJobToGroup(it, jobId) }
     }
 
     fun isDependencySatisfied(jobId: String): Boolean {
@@ -457,6 +469,7 @@ class JobBuilder(val id: String) {
     var concurrencyLimit: Int? = null
     var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE
     var customExecutor: Executor? = null
+    var group: String? = null
     lateinit var action: (String) -> Any?
 
     fun execute(block: (String) -> Any?) {
@@ -541,6 +554,10 @@ class JobBuilder(val id: String) {
 
     fun withCustomExecutor(executor: Executor) {
         this.customExecutor = executor
+    }
+
+    fun inGroup(groupId: String) {
+        this.group = groupId
     }
 }
 
