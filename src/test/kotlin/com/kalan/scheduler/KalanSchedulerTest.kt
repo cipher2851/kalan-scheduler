@@ -864,4 +864,23 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test periodic job result retrieval`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(2)
+        var currentVal = 0
+
+        scheduler.scheduleAtFixedRate("periodic-res", 0, 50) {
+            currentVal++
+            latch.countDown()
+            "Result-$currentVal"
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        val lastRes = scheduler.getLastResult("periodic-res")
+        assertTrue(lastRes.toString().startsWith("Result-"))
+        
+        scheduler.shutdown()
+    }
 }
