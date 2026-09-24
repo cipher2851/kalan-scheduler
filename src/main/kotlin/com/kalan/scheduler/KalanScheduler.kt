@@ -16,7 +16,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private val currentGlobalExecutions = AtomicInteger(0)
     private val jobGroups = ConcurrentHashMap<String, MutableSet<String>>()
     
-    // Queue for jobs that are ready to run, sorted by priority
+    private val priorityConcurrentCounts = ConcurrentHashMap<Int, AtomicInteger>()
+
     private val priorityQueue = PriorityBlockingQueue<Job>()
     private val workerExecutor = ThreadPoolExecutor(
         corePoolSize, corePoolSize, 0L, TimeUnit.MILLISECONDS, 
@@ -25,9 +26,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
+    var maxPerPriorityConcurrency: Int = Int.MAX_VALUE
 
     init {
-        // Start a dispatcher thread to move jobs from priorityQueue to workerExecutor
         Thread({
             while (running.get()) {
                 try {
@@ -123,16 +124,24 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             return
         }
 
+        val pCount = priorityConcurrentCounts.computeIfAbsent(job.priority) { AtomicInteger(0) }
+        if (pCount.get() >= maxPerPriorityConcurrency) {
+            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+            return
+        }
+
         if (!job.tryAcquireSlot()) {
             scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
         currentGlobalExecutions.incrementAndGet()
+        pCount.incrementAndGet()
         try {
             wrappedAction()
         } finally {
             currentGlobalExecutions.decrementAndGet()
+            pCount.decrementAndGet()
             job.releaseSlot()
             if (job.intervalMs == null && job.isCompleted()) {
                 notifyListeners(JobEvent(JobEvent.Type.COMPLETED, job.id))
