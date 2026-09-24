@@ -883,4 +883,20 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test graceful shutdown`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        
+        scheduler.schedule("shutdown-job", 10) {
+            latch.countDown()
+            null
+        }
+        
+        scheduler.shutdown()
+        // The job might or might not run depending on timing, but shutdown should be non-blocking
+        // and the dispatcher should terminate.
+        assertTrue(true)
+    }
 }

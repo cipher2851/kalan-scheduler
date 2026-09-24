@@ -24,23 +24,26 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         LinkedBlockingQueue(), threadFactory
     )
 
+    private val dispatcherThread: Thread
+
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
     var maxPerPriorityConcurrency: Int = Int.MAX_VALUE
 
     init {
-        Thread({
-            while (running.get()) {
+        dispatcherThread = Thread({
+            while (running.get() || priorityQueue.isNotEmpty()) {
                 try {
-                    val job = priorityQueue.take()
+                    val job = priorityQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                     val executor = job.customExecutor ?: workerExecutor
                     executor.execute { runJobInternal(job) }
                 } catch (e: InterruptedException) {
+                    if (!running.get()) break
                     Thread.currentThread().interrupt()
                     break
                 }
             }
-        }, "kalan-priority-dispatcher").start()
+        }, "kalan-priority-dispatcher").apply { start() }
     }
 
     fun addEventListener(listener: JobEventListener) {
@@ -391,6 +394,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun shutdown() {
         running.set(false)
+        dispatcherThread.interrupt()
         scheduler.shutdownNow()
         workerExecutor.shutdownNow()
         jobRepository.clear()
