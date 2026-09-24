@@ -400,6 +400,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.clear()
         activeJobs.clear()
         jobGroups.clear()
+        if (jobRepository is AsyncJobRepository) {
+            jobRepository.shutdown()
+        }
     }
 
     fun getActiveJobCount(): Int = activeJobs.size
