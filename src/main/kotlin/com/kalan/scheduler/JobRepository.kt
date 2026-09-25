@@ -73,3 +73,16 @@ class InMemoryJobRepository : JobRepository {
         jobs.clear()
     }
 }
+
+/**
+ * A simple Map-based implementation of JobRepository.
+ */
+class MapJobRepository(private val storage: MutableMap<String, Job> = ConcurrentHashMap()) : JobRepository {
+    override fun save(job: Job) { storage[job.id] = job }
+    override fun findById(id: String): Job? = storage[id]
+    override fun remove(id: String): Job? = storage.remove(id)
+    override fun findAll(): Collection<Job> = storage.values
+    override fun findByTag(tag: String): List<Job> = storage.values.filter { it.tags.contains(tag) }
+    override fun findByMetadata(key: String, value: Any): List<Job> = storage.values.filter { it.metadata[key] == value }
+    override fun clear() = storage.clear()
+}
