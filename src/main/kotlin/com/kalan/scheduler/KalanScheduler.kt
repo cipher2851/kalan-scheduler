@@ -156,6 +156,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?) {
         if (!running.get()) return
         
+        if (dependsOn != null && hasCircularDependency(id, dependsOn)) {
+            throw IllegalArgumentException("Circular dependency detected for job $id depending on $dependsOn")
+        }
+
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = JobPriority(priority), timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy, customExecutor = customExecutor)
         jobRepository.save(job)
 
@@ -168,6 +172,19 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }, delayMs, TimeUnit.MILLISECONDS)
         
         activeJobs[id] = future
+    }
+
+    private fun hasCircularDependency(startJobId: String, dependsOnId: String): Boolean {
+        var current = dependsOnId
+        val visited = mutableSetOf<String>()
+        visited.add(startJobId)
+        
+        while (current != null) {
+            if (visited.contains(current)) return true
+            visited.add(current)
+            current = jobRepository.findById(current)?.dependsOn
+        }
+        return false
     }
 
     fun scheduleAsync(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?): CompletableFuture<Any?> {
@@ -334,6 +351,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         activeJobs.remove(id)?.cancel(false)
         jobRepository.remove(id)
         notifyListeners(JobEvent(JobEvent.Type.CANCELLED, id))
+    }
+
+    fun cancelAll() {
+        activeJobs.keys.toList().forEach { cancel(it) }
     }
 
     fun cancelByTag(tag: String) {

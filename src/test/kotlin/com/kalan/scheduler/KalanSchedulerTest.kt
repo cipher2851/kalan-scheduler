@@ -899,4 +899,29 @@ class KalanSchedulerTest {
         // and the dispatcher should terminate.
         assertTrue(true)
     }
+
+    @Test
+    fun `test circular dependency detection`() {
+        val scheduler = KalanScheduler()
+        
+        scheduler.schedule("job-a", 0, dependsOn = null) { null }
+        scheduler.schedule("job-b", 0, dependsOn = "job-a") { null }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            scheduler.schedule("job-a", 0, dependsOn = "job-b") { null }
+        }
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test cancelAll`() {
+        val scheduler = KalanScheduler()
+        scheduler.schedule("j1", 1000) { null }
+        scheduler.schedule("j2", 2000) { null }
+        
+        assertEquals(2, scheduler.getActiveJobCount())
+        scheduler.cancelAll()
+        assertEquals(0, scheduler.getActiveJobCount())
+        scheduler.shutdown()
+    }
 }
