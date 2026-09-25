@@ -7,6 +7,21 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Represents the priority of a job. Higher values indicate higher priority.
+ */
+@JvmInline
+value class JobPriority(val value: Int) : Comparable<JobPriority> {
+    override fun compareTo(other: JobPriority): Int = this.value.compareTo(other.value)
+
+    companion object {
+        val LOW = JobPriority(0)
+        val NORMAL = JobPriority(10)
+        val HIGH = JobPriority(20)
+        val CRITICAL = JobPriority(30)
+    }
+}
+
 enum class JobExecutionStrategy {
     QUEUE,            // Allow multiple executions to queue up
     SKIP_IF_RUNNING    // Skip the execution if a previous one is still active
@@ -17,7 +32,7 @@ class Job(
     @Volatile var action: (String) -> Any?,
     val startTime: Instant,
     val intervalMs: Long? = null,
-    @Volatile var priority: Int = 0,
+    @Volatile var priority: JobPriority = JobPriority.NORMAL,
     @Volatile var timeoutMs: Long? = null,
     val tags: Set<String> = emptySet(),
     val metadata: Map<String, Any> = emptyMap(),
