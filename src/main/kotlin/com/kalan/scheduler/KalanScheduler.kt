@@ -498,6 +498,11 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             workerPoolQueueSize = workerExecutor.queue.size
         )
     }
+
+    fun getJobResultFuture(id: String): CompletableFuture<Any?> {
+        return jobRepository.findById(id)?.getResultFuture() 
+            ?: CompletableFuture.failedFuture(IllegalArgumentException("Job not found: $id"))
+    }
 }
 
 class JobBuilder(val id: String) {

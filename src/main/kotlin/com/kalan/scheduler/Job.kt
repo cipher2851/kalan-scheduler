@@ -2,6 +2,7 @@ package com.kalan.scheduler
 
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -50,6 +51,8 @@ class Job(
     private val completed = AtomicBoolean(false)
     private val lastResult = AtomicReference<Any?>(null)
     private val activeExecutions = AtomicInteger(0)
+    
+    private val resultFuture = CompletableFuture<Any?>()
 
     fun setPaused(paused: Boolean) {
         this.paused.set(paused)
@@ -102,10 +105,14 @@ class Job(
             
             if (intervalMs == null) {
                 markCompleted()
+                resultFuture.complete(result)
             }
             JobResult.Success(result)
         } catch (e: Throwable) {
             incrementFailure()
+            if (intervalMs == null) {
+                resultFuture.completeExceptionally(e)
+            }
             JobResult.Failure(e)
         }
     }
@@ -119,6 +126,8 @@ class Job(
     fun isMaxRepetitionsReached(): Boolean {
         return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
     }
+
+    fun getResultFuture(): CompletableFuture<Any?> = resultFuture
 
     @Suppress("UNCHECKED_CAST")
     fun <T> getMetadataValue(key: String): T? = metadata[key] as? T
