@@ -374,9 +374,15 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         return future != null && !future.isDone
     }
 
+    fun isJobPaused(id: String): Boolean {
+        return jobRepository.findById(id)?.isPaused() ?: false
+    }
+
     fun getJobStatus(id: String): JobStatus {
         val job = jobRepository.findById(id)
-        if (job != null && job.isCompleted()) return JobStatus.COMPLETED
+        if (job == null) return JobStatus.NOT_FOUND
+        if (job.isPaused()) return JobStatus.PAUSED
+        if (job.isCompleted()) return JobStatus.COMPLETED
         
         val future = activeJobs[id]
         return when {
@@ -603,7 +609,7 @@ class JobBuilder(val id: String) {
 }
 
 enum class JobStatus {
-    RUNNING, COMPLETED, CANCELLED, NOT_FOUND
+    RUNNING, PAUSED, COMPLETED, CANCELLED, NOT_FOUND
 }
 
 data class JobInfo(
