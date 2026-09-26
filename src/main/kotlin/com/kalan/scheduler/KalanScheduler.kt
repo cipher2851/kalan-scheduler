@@ -41,6 +41,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                     if (!running.get()) break
                     Thread.currentThread().interrupt()
                     break
+                } catch (e: Throwable) {
+                    errorHandler(e)
                 }
             }
         }, "kalan-priority-dispatcher").apply { start() }
@@ -324,7 +326,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun updateJobPriority(id: String, priority: Int) {
-        jobRepository.findById(id)?.priority = JobPriority(priority)
+        val job = jobRepository.findById(id) ?: return
+        val oldPriority = job.priority
+        job.priority = JobPriority(priority)
+        if (oldPriority != job.priority) {
+            if (priorityQueue.remove(job)) {
+                priorityQueue.put(job)
+            }
+        }
     }
 
     fun updateJobTimeout(id: String, timeoutMs: Long?) {
