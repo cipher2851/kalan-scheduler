@@ -40,7 +40,7 @@ class Job(
     val dependsOn: String? = null,
     val retryPolicy: RetryPolicy? = null,
     val concurrencyLimit: Int? = null,
-    val executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE,
+    @Volatile var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE,
     val customExecutor: Executor? = null
 ) : Comparable<Job> {
     private val executionCount = AtomicInteger(0)

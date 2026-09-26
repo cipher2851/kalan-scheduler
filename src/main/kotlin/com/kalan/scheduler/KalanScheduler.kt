@@ -331,6 +331,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.findById(id)?.timeoutMs = timeoutMs
     }
 
+    fun updateJobExecutionStrategy(id: String, strategy: JobExecutionStrategy) {
+        jobRepository.findById(id)?.executionStrategy = strategy
+    }
+
     fun pauseJob(id: String) {
         jobRepository.findById(id)?.setPaused(true)
     }

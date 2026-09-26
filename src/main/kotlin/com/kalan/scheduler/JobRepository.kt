@@ -82,6 +82,7 @@ class InMemoryJobRepository : JobRepository {
 
 /**
  * A simple Map-based implementation of JobRepository.
+ * Allows passing a custom mutable map for external management of stored jobs.
  */
 class MapJobRepository(private val storage: MutableMap<String, Job> = ConcurrentHashMap()) : JobRepository {
     override fun save(job: Job) { storage[job.id] = job }
