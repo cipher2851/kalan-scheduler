@@ -4,6 +4,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeParseException
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -209,6 +210,15 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun scheduleAt(id: String, startTime: Instant, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?) {
         val delay = Duration.between(Instant.now(), startTime).toMillis()
         schedule(id, if (delay < 0) 0 else delay, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit, strategy, customExecutor, action)
+    }
+
+    fun scheduleAtString(id: String, startTimeIso: String, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?) {
+        try {
+            val startTime = Instant.parse(startTimeIso)
+            scheduleAt(id, startTime, priority, timeoutMs, tags, metadata, dependsOn, retryPolicy, concurrencyLimit, strategy, customExecutor, action)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("Invalid ISO-8601 date-time format: $startTimeIso", e)
+        }
     }
 
     fun scheduleAtFixedRate(id: String, initialDelayMs: Long, periodMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), maxRepetitions: Int? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?) {
@@ -496,6 +506,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun getJobsInGroup(groupId: String): List<JobInfo> {
         return jobGroups[groupId]?.mapNotNull { getJobInfo(it) } ?: emptyList()
+    }
+
+    fun getGroupJobStatuses(groupId: String): Map<String, JobStatus> {
+        return jobGroups[groupId]?.associate { it to getJobStatus(it) } ?: emptyMap()
     }
 
     fun getHealthStatus(): SchedulerHealth {
