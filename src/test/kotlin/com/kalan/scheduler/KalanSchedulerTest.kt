@@ -896,7 +896,6 @@ class KalanSchedulerTest {
         
         scheduler.shutdown()
         // The job might or might not run depending on timing, but shutdown should be non-blocking
-        // and the dispatcher should terminate.
         assertTrue(true)
     }
 
@@ -922,6 +921,32 @@ class KalanSchedulerTest {
         assertEquals(2, scheduler.getActiveJobCount())
         scheduler.cancelAll()
         assertEquals(0, scheduler.getActiveJobCount())
+        scheduler.shutdown()
+    }
+
+    @Test
+    fun `test DSL timeout enforcement`() {
+        val scheduler = KalanScheduler()
+        val latch = CountDownLatch(1)
+        var timeoutCaught = false
+
+        scheduler.errorHandler = {
+            if (it is TimeoutException) {
+                timeoutCaught = true
+                latch.countDown()
+            }
+        }
+
+        scheduler.scheduleJob("dsl-timeout-job") {
+            withTimeout(100)
+            execute {
+                Thread.sleep(500)
+                null
+            }
+        }
+
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "DSL timeout should have been triggered")
+        assertTrue(timeoutCaught)
         scheduler.shutdown()
     }
 }
