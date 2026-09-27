@@ -444,6 +444,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     fun shutdown() {
         running.set(false)
+        priorityQueue.clear()
         dispatcherThread.interrupt()
         scheduler.shutdownNow()
         workerExecutor.shutdownNow()
