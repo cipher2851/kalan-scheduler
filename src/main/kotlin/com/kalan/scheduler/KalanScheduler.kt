@@ -36,6 +36,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             while (running.get() || priorityQueue.isNotEmpty()) {
                 try {
                     val job = priorityQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                    if (!running.get() && priorityQueue.isEmpty()) break
                     val executor = job.customExecutor ?: workerExecutor
                     executor.execute { runJobInternal(job) }
                 } catch (e: InterruptedException) {
