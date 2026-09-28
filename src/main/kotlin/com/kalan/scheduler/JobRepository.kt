@@ -2,6 +2,7 @@ package com.kalan.scheduler
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentSkipListSet
 
 interface JobRepository {
     fun save(job: Job)
@@ -83,6 +84,48 @@ class InMemoryJobRepository : JobRepository {
 
     override fun clear() {
         jobs.clear()
+    }
+}
+
+/**
+ * A JobRepository implementation that maintains jobs in a sorted set by priority.
+ * Useful for scenarios where priority-based retrieval is frequent.
+ */
+class SortedJobRepository : JobRepository {
+    private val idMap = ConcurrentHashMap<String, Job>()
+    private val sortedJobs = ConcurrentSkipListSet<Job>()
+
+    override fun save(job: Job) {
+        remove(job.id)
+        idMap[job.id] = job
+        sortedJobs.add(job)
+    }
+
+    override fun findById(id: String): Job? = idMap[id]
+
+    override fun remove(id: String): Job? {
+        val job = idMap.remove(id)
+        if (job != null) {
+            sortedJobs.remove(job)
+        }
+        return job
+    }
+
+    override fun findAll(): Collection<Job> = sortedJobs
+
+    override fun findByTag(tag: String): List<Job> = sortedJobs.filter { it.tags.contains(tag) }
+
+    override fun findByMetadata(key: String, value: Any): List<Job> = sortedJobs.filter { it.metadata[key] == value }
+
+    override fun findByPriority(priority: JobPriority): List<Job> = sortedJobs.filter { it.priority == priority }
+
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> {
+        return sortedJobs.filter { it.priority in min..max }
+    }
+
+    override fun clear() {
+        idMap.clear()
+        sortedJobs.clear()
     }
 }
 

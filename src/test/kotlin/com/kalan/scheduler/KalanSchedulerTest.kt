@@ -949,4 +949,22 @@ class KalanSchedulerTest {
         assertTrue(timeoutCaught)
         scheduler.shutdown()
     }
+
+    @Test
+    fun `test SortedJobRepository priority sorting`() {
+        val repo = SortedJobRepository()
+        val jobLow = Job("low", { null }, Instant.now(), priority = JobPriority.LOW)
+        val jobHigh = Job("high", { null }, Instant.now(), priority = JobPriority.HIGH)
+        val jobNormal = Job("normal", { null }, Instant.now(), priority = JobPriority.NORMAL)
+
+        repo.save(jobLow)
+        repo.save(jobHigh)
+        repo.save(jobNormal)
+
+        val all = repo.findAll().toList()
+        // Job implements Comparable based on priority (Higher first)
+        assertEquals("high", all[0].id)
+        assertEquals("normal", all[1].id)
+        assertEquals("low", all[2].id)
+    }
 }
