@@ -11,6 +11,7 @@ interface JobRepository {
     fun findByTag(tag: String): List<Job>
     fun findByMetadata(key: String, value: Any): List<Job>
     fun findByPriority(priority: JobPriority): List<Job>
+    fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job>
     fun clear()
 }
 
@@ -43,6 +44,7 @@ class AsyncJobRepository(private val delegate: JobRepository) : JobRepository {
     override fun findByTag(tag: String): List<Job> = delegate.findByTag(tag)
     override fun findByMetadata(key: String, value: Any): List<Job> = delegate.findByMetadata(key, value)
     override fun findByPriority(priority: JobPriority): List<Job> = delegate.findByPriority(priority)
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> = delegate.findByPriorityRange(min, max)
     override fun clear() = delegate.clear()
 
     fun shutdown() {
@@ -75,6 +77,10 @@ class InMemoryJobRepository : JobRepository {
         return jobs.values.filter { it.priority == priority }
     }
 
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> {
+        return jobs.values.filter { it.priority in min..max }
+    }
+
     override fun clear() {
         jobs.clear()
     }
@@ -92,5 +98,6 @@ class MapJobRepository(private val storage: MutableMap<String, Job> = Concurrent
     override fun findByTag(tag: String): List<Job> = storage.values.filter { it.tags.contains(tag) }
     override fun findByMetadata(key: String, value: Any): List<Job> = storage.values.filter { it.metadata[key] == value }
     override fun findByPriority(priority: JobPriority): List<Job> = storage.values.filter { it.priority == priority }
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> = storage.values.filter { it.priority in min..max }
     override fun clear() = storage.clear()
 }
