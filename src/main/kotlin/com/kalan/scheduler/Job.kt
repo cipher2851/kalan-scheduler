@@ -94,6 +94,10 @@ class Job(
             return JobResult.MaxRepetitionsReached
         }
 
+        if (!tryAcquireSlot()) {
+            return JobResult.ConcurrencyLimitReached
+        }
+
         val executionId = UUID.randomUUID().toString()
         
         return try {
@@ -114,6 +118,8 @@ class Job(
                 resultFuture.completeExceptionally(e)
             }
             JobResult.Failure(e)
+        } finally {
+            releaseSlot()
         }
     }
 

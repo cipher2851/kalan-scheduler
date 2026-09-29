@@ -118,7 +118,11 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private fun runJobInternal(job: Job) {
         val wrappedAction = wrapExecution(job) {
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
-            job.execute()
+            val result = job.execute()
+            if (result is JobResult.ConcurrencyLimitReached) {
+                // If the internal job.execute failed to acquire slot (redundancy check), requeue
+                scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+            }
         }
 
         if (!isDependencySatisfied(job.id)) {
@@ -137,10 +141,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             return
         }
 
-        if (!job.tryAcquireSlot()) {
-            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
-            return
-        }
+        // We no longer call job.tryAcquireSlot() here because job.execute() handles it internally
+        // This avoids double-counting or missing slot releases
 
         currentGlobalExecutions.incrementAndGet()
         pCount.incrementAndGet()
@@ -149,7 +151,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         } finally {
             currentGlobalExecutions.decrementAndGet()
             pCount.decrementAndGet()
-            job.releaseSlot()
             if (job.intervalMs == null && job.isCompleted()) {
                 notifyListeners(JobEvent(JobEvent.Type.COMPLETED, job.id))
                 activeJobs.remove(job.id)
