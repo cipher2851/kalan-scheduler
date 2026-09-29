@@ -967,4 +967,30 @@ class KalanSchedulerTest {
         assertEquals("normal", all[1].id)
         assertEquals("low", all[2].id)
     }
+
+    @Test
+    fun `test PriorityJobRepository efficiency`() {
+        val repo = PriorityJobRepository()
+        val jobLow = Job("low", { null }, Instant.now(), priority = JobPriority.LOW)
+        val jobHigh = Job("high", { null }, Instant.now(), priority = JobPriority.HIGH)
+        val jobHigh2 = Job("high2", { null }, Instant.now(), priority = JobPriority.HIGH)
+        val jobNormal = Job("normal", { null }, Instant.now(), priority = JobPriority.NORMAL)
+
+        repo.save(jobLow)
+        repo.save(jobHigh)
+        repo.save(jobHigh2)
+        repo.save(jobNormal)
+
+        val highPriorityJobs = repo.findByPriority(JobPriority.HIGH)
+        assertEquals(2, highPriorityJobs.size)
+        assertTrue(highPriorityJobs.contains(jobHigh))
+        assertTrue(highPriorityJobs.contains(jobHigh2))
+
+        val rangeJobs = repo.findByPriorityRange(JobPriority.NORMAL, JobPriority.HIGH)
+        assertEquals(3, rangeJobs.size)
+        assertFalse(rangeJobs.contains(jobLow))
+
+        repo.remove("high")
+        assertEquals(1, repo.findByPriority(JobPriority.HIGH).size)
+    }
 }

@@ -138,6 +138,51 @@ class SortedJobRepository : JobRepository {
 }
 
 /**
+ * An optimized repository that indexes jobs by their priority level.
+ */
+class PriorityJobRepository : JobRepository {
+    private val idMap = ConcurrentHashMap<String, Job>()
+    private val priorityMap = ConcurrentHashMap<Int, MutableSet<Job>>()
+
+    override fun save(job: Job) {
+        val existing = remove(job.id)
+        idMap[job.id] = job
+        priorityMap.computeIfAbsent(job.priority.value) { ConcurrentHashMap.newKeySet() }.add(job)
+    }
+
+    override fun findById(id: String): Job? = idMap[id]
+
+    override fun remove(id: String): Job? {
+        val job = idMap.remove(id)
+        if (job != null) {
+            priorityMap[job.priority.value]?.remove(job)
+        }
+        return job
+    }
+
+    override fun findAll(): Collection<Job> = idMap.values
+
+    override fun findByTag(tag: String): List<Job> = idMap.values.filter { it.tags.contains(tag) }
+
+    override fun findByTags(tags: Set<String>): List<Job> = idMap.values.filter { job -> job.tags.any { it in tags } }
+
+    override fun findByMetadata(key: String, value: Any): List<Job> = idMap.values.filter { it.metadata[key] == value }
+
+    override fun findByPriority(priority: JobPriority): List<Job> {
+        return priorityMap[priority.value]?.toList() ?: emptyList()
+    }
+
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> {
+        return priorityMap.filter { it.key in min.value..max.value }.values.flatten()
+    }
+
+    override fun clear() {
+        idMap.clear()
+        priorityMap.clear()
+    }
+}
+
+/**
  * A simple Map-based implementation of JobRepository.
  * Allows passing a custom mutable map for external management of stored jobs.
  */
