@@ -7,6 +7,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
  * Represents the priority of a job. Higher values indicate higher priority.
@@ -27,6 +28,14 @@ enum class JobExecutionStrategy {
     QUEUE,            // Allow multiple executions to queue up
     SKIP_IF_RUNNING    // Skip the execution if a previous one is still active
 }
+
+data class JobExecutionRecord(
+    val executionId: String,
+    val startTime: Instant,
+    val endTime: Instant,
+    val result: JobResult,
+    val durationMs: Long
+)
 
 class Job(
     val id: String,
@@ -53,6 +62,7 @@ class Job(
     private val activeExecutions = AtomicInteger(0)
     
     private val resultFuture = CompletableFuture<Any?>()
+    private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
 
     fun setPaused(paused: Boolean) {
         this.paused.set(paused)
@@ -99,19 +109,20 @@ class Job(
         }
 
         val executionId = UUID.randomUUID().toString()
+        val start = Instant.now()
         
-        return try {
-            val result = action(executionId)
+        val result = try {
+            val res = action(executionId)
             
-            lastResult.set(result)
+            lastResult.set(res)
             executionCount.incrementAndGet()
             lastExecutionTime.set(Instant.now())
             
             if (intervalMs == null) {
                 markCompleted()
-                resultFuture.complete(result)
+                resultFuture.complete(res)
             }
-            JobResult.Success(result)
+            JobResult.Success(res)
         } catch (e: Throwable) {
             incrementFailure()
             if (intervalMs == null) {
@@ -121,6 +132,13 @@ class Job(
         } finally {
             releaseSlot()
         }
+
+        val end = Instant.now()
+        val duration = java.time.Duration.between(start, end).toMillis()
+        history.addFirst(JobExecutionRecord(executionId, start, end, result, duration))
+        if (history.size > 100) history.removeLast()
+
+        return result
     }
 
     fun getExecutionCount(): Int = executionCount.get()
@@ -134,6 +152,8 @@ class Job(
     }
 
     fun getResultFuture(): CompletableFuture<Any?> = resultFuture
+
+    fun getHistory(): List<JobExecutionRecord> = history.toList()
 
     @Suppress("UNCHECKED_CAST")
     fun <T> getMetadataValue(key: String): T? = metadata[key] as? T

@@ -430,6 +430,10 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         return jobRepository.findById(id)?.getLastResult()
     }
 
+    fun getJobHistory(id: String): List<JobExecutionRecord> {
+        return jobRepository.findById(id)?.getHistory() ?: emptyList()
+    }
+
     fun getJobInfo(id: String): JobInfo?
         = jobRepository.findById(id)?.let {
             JobInfo(id, getJobStatus(id), it.getExecutionCount(), it.getLastExecutionTime(), it.intervalMs, it.priority.value, it.tags, it.metadata, it.timeoutMs, it.getLastResult(), it.executionStrategy)
