@@ -161,8 +161,13 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun schedule(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?) {
         if (!running.get()) return
         
-        if (dependsOn != null && hasCircularDependency(id, dependsOn)) {
-            throw IllegalArgumentException("Circular dependency detected for job $id depending on $dependsOn")
+        if (dependsOn != null) {
+            if (jobRepository.findById(dependsOn) == null) {
+                throw IllegalArgumentException("Dependency job $dependsOn does not exist")
+            }
+            if (hasCircularDependency(id, dependsOn)) {
+                throw IllegalArgumentException("Circular dependency detected for job $id depending on $dependsOn")
+            }
         }
 
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = JobPriority(priority), timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy, customExecutor = customExecutor)
@@ -238,6 +243,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
         val future = scheduler.scheduleAtFixedRate({
             try {
+                if (!isDependencySatisfied(job.id)) return@scheduleAtFixedRate
                 if (job.executionStrategy == JobExecutionStrategy.SKIP_IF_RUNNING && !job.tryAcquireSlot()) {
                     return@scheduleAtFixedRate
                 }
@@ -274,6 +280,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }
         val future = scheduler.scheduleWithFixedDelay({
             try {
+                if (!isDependencySatisfied(job.id)) return@scheduleWithFixedDelay
                 if (currentGlobalExecutions.get() >= maxGlobalConcurrency || !job.tryAcquireSlot()) return@scheduleWithFixedDelay
                 
                 currentGlobalExecutions.incrementAndGet()
