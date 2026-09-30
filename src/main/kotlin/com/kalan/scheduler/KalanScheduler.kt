@@ -310,6 +310,11 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             
             val future = scheduler.schedule({
                 try {
+                    if (!isDependencySatisfied(job.id)) {
+                        // Re-schedule in a short interval if dependency not yet met
+                        scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+                        return@schedule
+                    }
                     priorityQueue.put(job)
                     scheduleNext()
                 } catch (e: Throwable) {
@@ -615,6 +620,10 @@ class JobBuilder(val id: String) {
 
     fun addMetadata(key: String, value: Any) {
         this.metadata[key] = value
+    }
+
+    fun metadata(block: MutableMap<String, Any>.() -> Unit) {
+        this.metadata.apply(block)
     }
 
     fun repeatAtMost(times: Int) {
