@@ -45,6 +45,20 @@ enum class JobExecutionStatus {
     PAUSED
 }
 
+/**
+ * Encapsulates the runtime state of a Job.
+ */
+class JobState {
+    val executionCount = AtomicInteger(0)
+    val failureCount = AtomicInteger(0)
+    val lastExecutionTime = AtomicReference<Instant?>(null)
+    val paused = AtomicBoolean(false)
+    val completed = AtomicBoolean(false)
+    val lastResult = AtomicReference<Any?>(null)
+    val activeExecutions = AtomicInteger(0)
+    val status = AtomicReference<JobExecutionStatus>(JobExecutionStatus.QUEUED)
+}
+
 class Job(
     val id: String,
     @Volatile var action: (String) -> Any?,
@@ -61,52 +75,48 @@ class Job(
     @Volatile var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE,
     val customExecutor: Executor? = null
 ) : Comparable<Job> {
-    private val executionCount = AtomicInteger(0)
-    private val failureCount = AtomicInteger(0)
-    private val lastExecutionTime = AtomicReference<Instant?>(null)
-    private val paused = AtomicBoolean(false)
-    private val completed = AtomicBoolean(false)
-    private val lastResult = AtomicReference<Any?>(null)
-    private val activeExecutions = AtomicInteger(0)
-    
+    private val state = JobState()
     private val resultFuture = CompletableFuture<Any?>()
     private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
 
     fun setPaused(paused: Boolean) {
-        this.paused.set(paused)
+        state.paused.set(paused)
+        state.status.set(if (paused) JobExecutionStatus.PAUSED else JobExecutionStatus.QUEUED)
     }
 
-    fun isPaused(): Boolean = paused.get()
+    fun isPaused(): Boolean = state.paused.get()
 
     fun markCompleted() {
-        completed.set(true)
+        state.completed.set(true)
+        state.status.set(JobExecutionStatus.COMPLETED)
     }
 
-    fun isCompleted(): Boolean = completed.get()
+    fun isCompleted(): Boolean = state.completed.get()
 
     fun incrementFailure() {
-        failureCount.incrementAndGet()
+        state.failureCount.incrementAndGet()
+        state.status.set(JobExecutionStatus.FAILED)
     }
 
-    fun getFailureCount(): Int = failureCount.get()
+    fun getFailureCount(): Int = state.failureCount.get()
 
     fun tryAcquireSlot(): Boolean {
         if (concurrencyLimit == null) return true
         while (true) {
-            val current = activeExecutions.get()
+            val current = state.activeExecutions.get()
             if (current >= concurrencyLimit!!) return false
-            if (activeExecutions.compareAndSet(current, current + 1)) return true
+            if (state.activeExecutions.compareAndSet(current, current + 1)) return true
         }
     }
 
     fun releaseSlot() {
         if (concurrencyLimit != null) {
-            activeExecutions.decrementAndGet()
+            state.activeExecutions.decrementAndGet()
         }
     }
 
     fun execute(): JobResult {
-        if (paused.get()) return JobResult.Paused
+        if (state.paused.get()) return JobResult.Paused
         
         if (isMaxRepetitionsReached()) {
             return JobResult.MaxRepetitionsReached
@@ -118,13 +128,14 @@ class Job(
 
         val executionId = UUID.randomUUID().toString()
         val start = Instant.now()
+        state.status.set(JobExecutionStatus.RUNNING)
         
         val result = try {
             val res = action(executionId)
             
-            lastResult.set(res)
-            executionCount.incrementAndGet()
-            lastExecutionTime.set(Instant.now())
+            state.lastResult.set(res)
+            state.executionCount.incrementAndGet()
+            state.lastExecutionTime.set(Instant.now())
             
             if (intervalMs == null) {
                 markCompleted()
@@ -149,14 +160,14 @@ class Job(
         return result
     }
 
-    fun getExecutionCount(): Int = executionCount.get()
+    fun getExecutionCount(): Int = state.executionCount.get()
     
-    fun getLastExecutionTime(): Instant? = lastExecutionTime.get()
+    fun getLastExecutionTime(): Instant? = state.lastExecutionTime.get()
 
-    fun getLastResult(): Any? = lastResult.get()
+    fun getLastResult(): Any? = state.lastResult.get()
 
     fun isMaxRepetitionsReached(): Boolean {
-        return maxRepetitions != null && executionCount.get() >= maxRepetitions!!
+        return maxRepetitions != null && state.executionCount.get() >= maxRepetitions!!
     }
 
     fun getResultFuture(): CompletableFuture<Any?> = resultFuture
