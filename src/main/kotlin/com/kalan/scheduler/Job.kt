@@ -37,6 +37,14 @@ data class JobExecutionRecord(
     val durationMs: Long
 )
 
+enum class JobExecutionStatus {
+    QUEUED,
+    RUNNING,
+    COMPLETED,
+    FAILED,
+    PAUSED
+}
+
 class Job(
     val id: String,
     @Volatile var action: (String) -> Any?,
