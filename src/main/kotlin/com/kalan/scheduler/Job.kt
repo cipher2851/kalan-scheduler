@@ -188,7 +188,8 @@ class Job(
 
 data class RetryPolicy(
     val maxRetries: Int,
-    val delayMs: Long
+    val delayMs: Long,
+    val useExponentialBackoff: Boolean = false
 )
 
 sealed class JobResult {
