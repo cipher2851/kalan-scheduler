@@ -141,9 +141,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             return
         }
 
-        // We no longer call job.tryAcquireSlot() here because job.execute() handles it internally
-        // This avoids double-counting or missing slot releases
-
         currentGlobalExecutions.incrementAndGet()
         pCount.incrementAndGet()
         try {
@@ -244,18 +241,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val future = scheduler.scheduleAtFixedRate({
             try {
                 if (!isDependencySatisfied(job.id)) return@scheduleAtFixedRate
-                if (job.executionStrategy == JobExecutionStrategy.SKIP_IF_RUNNING && !job.tryAcquireSlot()) {
-                    return@scheduleAtFixedRate
-                }
                 
-                if (currentGlobalExecutions.get() >= maxGlobalConcurrency || !job.tryAcquireSlot()) return@scheduleAtFixedRate
+                if (currentGlobalExecutions.get() >= maxGlobalConcurrency) return@scheduleAtFixedRate
                 
                 currentGlobalExecutions.incrementAndGet()
                 try {
                     wrappedAction()
                 } finally {
                     currentGlobalExecutions.decrementAndGet()
-                    job.releaseSlot()
                 }
             } catch (e: Throwable) {
                 errorHandler(e)
@@ -281,14 +274,13 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val future = scheduler.scheduleWithFixedDelay({
             try {
                 if (!isDependencySatisfied(job.id)) return@scheduleWithFixedDelay
-                if (currentGlobalExecutions.get() >= maxGlobalConcurrency || !job.tryAcquireSlot()) return@scheduleWithFixedDelay
+                if (currentGlobalExecutions.get() >= maxGlobalConcurrency) return@scheduleWithFixedDelay
                 
                 currentGlobalExecutions.incrementAndGet()
                 try {
                     wrappedAction()
                 } finally {
                     currentGlobalExecutions.decrementAndGet()
-                    job.releaseSlot()
                 }
             } catch (e: Throwable) {
                 errorHandler(e)

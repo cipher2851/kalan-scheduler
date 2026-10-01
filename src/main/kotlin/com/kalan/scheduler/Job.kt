@@ -123,7 +123,11 @@ class Job(
         }
 
         if (!tryAcquireSlot()) {
-            return JobResult.ConcurrencyLimitReached
+            return if (executionStrategy == JobExecutionStrategy.SKIP_IF_RUNNING) {
+                JobResult.Skipped
+            } else {
+                JobResult.ConcurrencyLimitReached
+            }
         }
 
         val executionId = UUID.randomUUID().toString()
@@ -193,4 +197,5 @@ sealed class JobResult {
     object MaxRepetitionsReached : JobResult()
     data class Failure(val exception: Throwable) : JobResult()
     object ConcurrencyLimitReached : JobResult()
+    object Skipped : JobResult()
 }
