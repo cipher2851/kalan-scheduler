@@ -101,7 +101,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private fun handleFailure(job: Job, e: Throwable) {
         job.incrementFailure()
-        notifyListeners(JobEvent(JobEvent.Type.FAILED, job.id, e))
+        notifyListeners(JobEvent(JobEvent.Type.FAILED, job.id))
         errorHandler(e)
 
         val policy = job.retryPolicy
@@ -546,9 +546,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     }
 
     fun getCurrentlyExecutingJobs(): List<String> {
-        return jobRepository.findAll().filter { it.execute() is JobResult.Success || it.isPaused() }.map { it.id }
-        // Note: Above is a placeholder. Correct way is checking if the job is currently handled by workerExecutor.
-        // For this lightweight impl, we return the IDs that are logically active in the scheduler's tracking.
+        return jobRepository.findAll().filter { it.getJobStatus() == JobExecutionStatus.RUNNING }.map { it.id }
     }
 }
 
