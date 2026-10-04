@@ -196,9 +196,9 @@ data class RetryPolicy(
 
 sealed class JobResult {
     data class Success(val value: Any?) : JobResult()
-    object Paused : JobResult()
-    object MaxRepetitionsReached : JobResult()
+    data object Paused : JobResult()
+    data object MaxRepetitionsReached : JobResult()
     data class Failure(val exception: Throwable) : JobResult()
-    object ConcurrencyLimitReached : JobResult()
-    object Skipped : JobResult()
+    data object ConcurrencyLimitReached : JobResult()
+    data object Skipped : JobResult()
 }
