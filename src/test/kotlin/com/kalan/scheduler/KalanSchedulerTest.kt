@@ -9,6 +9,7 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.File
 
 class KalanSchedulerTest {
 
@@ -992,5 +993,27 @@ class KalanSchedulerTest {
 
         repo.remove("high")
         assertEquals(1, repo.findByPriority(JobPriority.HIGH).size)
+    }
+
+    @Test
+    fun `test PersistentJobRepository basic persistence`() {
+        val tempFile = File.createTempFile("jobs-persist", ".txt")
+        val repo = PersistentJobRepository(tempFile)
+        
+        val job = Job("p1", { null }, Instant.now(), priority = JobPriority.HIGH, tags = setOf("test", "persist"))
+        repo.save(job)
+        
+        val repo2 = PersistentJobRepository(tempFile)
+        repo2.load { id, prio, tags ->
+            Job(id, { null }, Instant.now(), priority = JobPriority(prio), tags = tags)
+        }
+        
+        val loaded = repo2.findById("p1")
+        assertNotNull(loaded)
+        assertEquals("p1", loaded?.id)
+        assertEquals(JobPriority.HIGH, loaded?.priority)
+        assertTrue(loaded?.tags?.contains("test") == true)
+        
+        tempFile.delete()
     }
 }
