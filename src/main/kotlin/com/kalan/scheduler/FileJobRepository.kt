@@ -29,7 +29,13 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
 
     override fun findByTag(tag: String): List<Job> = cache.values.filter { it.tags.contains(tag) }
 
+    override fun findByTags(tags: Set<String>): List<Job> = cache.values.filter { job -> job.tags.any { it in tags } }
+
     override fun findByMetadata(key: String, value: Any): List<Job> = cache.values.filter { it.metadata[key] == value }
+
+    override fun findByPriority(priority: JobPriority): List<Job> = cache.values.filter { it.priority == priority }
+
+    override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> = cache.values.filter { it.priority in min..max }
 
     override fun clear() {
         cache.clear()
