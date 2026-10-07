@@ -738,4 +738,10 @@ data class CronExpression(
         if (dayOfWeek != -1 && dt.dayOfWeek.value != dayOfWeek) return false
         return true
     }
+
+    companion object {
+        fun everyMinute() = CronExpression(minute = -1, hour = -1)
+        fun everyHour() = CronExpression(minute = 0, hour = -1)
+        fun everyDay() = CronExpression(minute = 0, hour = 0)
+    }
 }
