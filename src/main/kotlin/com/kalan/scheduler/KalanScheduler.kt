@@ -592,6 +592,10 @@ class JobBuilder(val id: String) {
         this.initialDelay = ms
     }
 
+    fun priority(priority: Int) {
+        this.priority = JobPriority(priority)
+    }
+
     fun withPriority(priority: Int) {
         this.priority = JobPriority(priority)
     }
