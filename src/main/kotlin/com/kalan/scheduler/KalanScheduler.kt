@@ -27,6 +27,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     )
 
     private val dispatcherThread: Thread
+    private val dependencyGraph = JobDependencyGraph()
 
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
@@ -127,7 +128,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val result = job.execute()
             if (result is JobResult.ConcurrencyLimitReached) {
-                // If the internal job.execute failed to acquire slot (redundancy check), requeue
                 scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             }
         }
@@ -169,13 +169,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             if (jobRepository.findById(dependsOn) == null) {
                 throw IllegalArgumentException("Dependency job $dependsOn does not exist")
             }
-            if (hasCircularDependency(id, dependsOn)) {
+            if (dependencyGraph.wouldCreateCycle(id, dependsOn)) {
                 throw IllegalArgumentException("Circular dependency detected for job $id depending on $dependsOn")
             }
         }
 
         val job = Job(id, action, Instant.now().plusMillis(delayMs), priority = JobPriority(priority), timeoutMs = timeoutMs, tags = tags, metadata = metadata, dependsOn = dependsOn, retryPolicy = retryPolicy, concurrencyLimit = concurrencyLimit, executionStrategy = strategy, customExecutor = customExecutor)
         jobRepository.save(job)
+        dependencyGraph.addDependency(id, dependsOn)
 
         val future = scheduler.schedule({ 
             try {
@@ -186,19 +187,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         }, delayMs, TimeUnit.MILLISECONDS)
         
         activeJobs[id] = future
-    }
-
-    private fun hasCircularDependency(startJobId: String, dependsOnId: String): Boolean {
-        var current = dependsOnId
-        val visited = mutableSetOf<String>()
-        visited.add(startJobId)
-        
-        while (current != null) {
-            if (visited.contains(current)) return true
-            visited.add(current)
-            current = jobRepository.findById(current)?.dependsOn
-        }
-        return false
     }
 
     fun scheduleAsync(id: String, delayMs: Long, priority: Int = 0, timeoutMs: Long? = null, tags: Set<String> = emptySet(), metadata: Map<String, Any> = emptyMap(), dependsOn: String? = null, retryPolicy: RetryPolicy? = null, concurrencyLimit: Int? = null, strategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE, customExecutor: Executor? = null, action: (String) -> Any?): CompletableFuture<Any?> {
@@ -310,7 +298,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             val future = scheduler.schedule({
                 try {
                     if (!isDependencySatisfied(job.id)) {
-                        // Re-schedule in a short interval if dependency not yet met
                         scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
                         return@schedule
                     }
@@ -386,6 +373,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun cancel(id: String) {
         activeJobs.remove(id)?.cancel(false)
         jobRepository.remove(id)
+        dependencyGraph.removeJob(id)
         notifyListeners(JobEvent(JobEvent.Type.CANCELLED, id))
     }
 
@@ -466,6 +454,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         scheduler.shutdownNow()
         workerExecutor.shutdownNow()
         jobRepository.clear()
+        dependencyGraph.clear()
         activeJobs.clear()
         jobGroups.clear()
         if (jobRepository is AsyncJobRepository) {
