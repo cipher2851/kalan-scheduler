@@ -57,6 +57,7 @@ class JobState {
     val lastResult = AtomicReference<Any?>(null)
     val activeExecutions = AtomicInteger(0)
     val status = AtomicReference<JobExecutionStatus>(JobExecutionStatus.QUEUED)
+    val currentExecutionId = AtomicReference<String?>(null)
 }
 
 class Job(
@@ -133,6 +134,7 @@ class Job(
         val executionId = UUID.randomUUID().toString()
         val start = Instant.now()
         state.status.set(JobExecutionStatus.RUNNING)
+        state.currentExecutionId.set(executionId)
         
         val result = try {
             val res = action(executionId)
@@ -154,6 +156,7 @@ class Job(
             JobResult.Failure(e)
         } finally {
             releaseSlot()
+            state.currentExecutionId.set(null)
         }
 
         val end = Instant.now()
@@ -182,6 +185,8 @@ class Job(
     fun <T> getMetadataValue(key: String): T? = metadata[key] as? T
 
     fun getJobStatus(): JobExecutionStatus = state.status.get()
+
+    fun getCurrentExecutionId(): String? = state.currentExecutionId.get()
 
     override fun compareTo(other: Job): Int {
         return other.priority.compareTo(this.priority) // Higher priority first
