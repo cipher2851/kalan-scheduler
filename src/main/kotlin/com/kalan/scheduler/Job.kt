@@ -50,11 +50,12 @@ enum class JobExecutionStatus {
  */
 class JobState {
     val executionCount = AtomicInteger(0)
+    val successCount = AtomicInteger(0)
     val failureCount = AtomicInteger(0)
     val lastExecutionTime = AtomicReference<Instant?>(null)
     val paused = AtomicBoolean(false)
     val completed = AtomicBoolean(false)
-    val lastResult = AtomicReference<Any?>(null)
+    val lastResult = AtomicReference<JobResult?>(null)
     val activeExecutions = AtomicInteger(0)
     val status = AtomicReference<JobExecutionStatus>(JobExecutionStatus.QUEUED)
     val currentExecutionId = AtomicReference<String?>(null)
@@ -100,6 +101,7 @@ class Job(
     }
 
     fun getFailureCount(): Int = state.failureCount.get()
+    fun getSuccessCount(): Int = state.successCount.get()
 
     fun tryAcquireSlot(): Boolean {
         if (concurrencyLimit == null) return true
@@ -139,8 +141,8 @@ class Job(
         val result = try {
             val res = action(executionId)
             
-            state.lastResult.set(res)
             state.executionCount.incrementAndGet()
+            state.successCount.incrementAndGet()
             state.lastExecutionTime.set(Instant.now())
             
             if (intervalMs == null) {
@@ -159,6 +161,7 @@ class Job(
             state.currentExecutionId.set(null)
         }
 
+        state.lastResult.set(result)
         val end = Instant.now()
         val duration = java.time.Duration.between(start, end).toMillis()
         history.addFirst(JobExecutionRecord(executionId, start, end, result, duration))
@@ -171,7 +174,12 @@ class Job(
     
     fun getLastExecutionTime(): Instant? = state.lastExecutionTime.get()
 
-    fun getLastResult(): Any? = state.lastResult.get()
+    fun getLastResult(): Any? {
+        val res = state.lastResult.get()
+        return if (res is JobResult.Success) res.value else null
+    }
+
+    fun getLastJobResult(): JobResult? = state.lastResult.get()
 
     fun isMaxRepetitionsReached(): Boolean {
         return maxRepetitions != null && state.executionCount.get() >= maxRepetitions!!
