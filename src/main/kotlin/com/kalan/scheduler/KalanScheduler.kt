@@ -410,7 +410,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         
         val future = activeJobs[id]
         return when {
-            future == null -> JobStatus.NOT_FOUND
+            future == null -> if (job.getJobStatus() == JobExecutionStatus.RUNNING) JobStatus.RUNNING else JobStatus.NOT_FOUND
             future.isCancelled -> JobStatus.CANCELLED
             future.isDone -> JobStatus.COMPLETED
             else -> JobStatus.RUNNING
@@ -525,7 +525,9 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             activeJobCount = activeJobs.size,
             queuedJobCount = priorityQueue.size,
             workerPoolActiveThreads = workerExecutor.activeCount,
-            workerPoolQueueSize = workerExecutor.queue.size
+            workerPoolQueueSize = workerExecutor.queue.size,
+            dispatcherAlive = dispatcherThread.isAlive,
+            totalStoredJobs = jobRepository.findAll().size
         )
     }
 
@@ -678,7 +680,9 @@ data class SchedulerHealth(
     val activeJobCount: Int,
     val queuedJobCount: Int,
     val workerPoolActiveThreads: Int,
-    val workerPoolQueueSize: Int
+    val workerPoolQueueSize: Int,
+    val dispatcherAlive: Boolean,
+    val totalStoredJobs: Int
 )
 
 class DefaultKalanThreadFactory : ThreadFactory {
