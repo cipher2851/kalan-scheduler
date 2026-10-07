@@ -49,7 +49,7 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
         storageFile.writeText(content)
     }
 
-    fun load(jobFactory: (String, Int, Set<String>) -> Job) {
+    fun load(factory: JobFactory) {
         if (!storageFile.exists()) return
         storageFile.readLines().filter { it.isNotBlank() }.forEach {
             val parts = it.split("|")
@@ -57,7 +57,7 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
                 val id = parts[0]
                 val priority = parts[1].toIntOrNull() ?: 10
                 val tags = if (parts[2].isEmpty()) emptySet() else parts[2].split(",").toSet()
-                jobs[id] = jobFactory(id, priority, tags)
+                jobs[id] = factory.createJob(id, priority, tags)
             }
         }
     }

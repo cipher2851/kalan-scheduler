@@ -50,6 +50,7 @@ enum class JobExecutionStatus {
  */
 class JobState {
     val executionCount = AtomicInteger(0)
+    val totalAttempts = AtomicInteger(0)
     val successCount = AtomicInteger(0)
     val failureCount = AtomicInteger(0)
     val lastExecutionTime = AtomicReference<Instant?>(null)
@@ -137,6 +138,7 @@ class Job(
         val start = Instant.now()
         state.status.set(JobExecutionStatus.RUNNING)
         state.currentExecutionId.set(executionId)
+        state.totalAttempts.incrementAndGet()
         
         val result = try {
             val res = action(executionId)
@@ -171,6 +173,7 @@ class Job(
     }
 
     fun getExecutionCount(): Int = state.executionCount.get()
+    fun getTotalAttempts(): Int = state.totalAttempts.get()
     
     fun getLastExecutionTime(): Instant? = state.lastExecutionTime.get()
 
@@ -214,4 +217,11 @@ sealed class JobResult {
     data class Failure(val exception: Throwable) : JobResult()
     data object ConcurrencyLimitReached : JobResult()
     data object Skipped : JobResult()
+}
+
+/**
+ * Interface for creating Job instances from persisted data.
+ */
+interface JobFactory {
+    fun createJob(id: String, priority: Int, tags: Set<String>): Job
 }
