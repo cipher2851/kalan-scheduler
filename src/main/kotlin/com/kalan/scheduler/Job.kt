@@ -47,6 +47,19 @@ enum class JobExecutionStatus {
 }
 
 /**
+ * Structured statistics for a job's lifetime performance.
+ */
+data class JobStatistics(
+    val totalAttempts: Int,
+    val successCount: Int,
+    val failureCount: Int,
+    val successRate: Double,
+    val averageDurationMs: Double,
+    val lastExecutionTime: Instant?,
+    val currentStatus: JobExecutionStatus
+)
+
+/**
  * Encapsulates the runtime state of a Job.
  */
 class JobState {
@@ -220,6 +233,23 @@ class Job(
     fun getJobStatus(): JobExecutionStatus = state.status.get()
 
     fun getCurrentExecutionId(): String? = state.currentExecutionId.get()
+
+    fun getStatistics(): JobStatistics {
+        val total = state.totalAttempts.get()
+        val success = state.successCount.get()
+        val failure = state.failureCount.get()
+        val avgDuration = history.map { it.durationMs }.average().takeIf { !it.isNaN() } ?: 0.0
+        
+        return JobStatistics(
+            totalAttempts = total,
+            successCount = success,
+            failureCount = failure,
+            successRate = if (total > 0) success.toDouble() / total else 0.0,
+            averageDurationMs = avgDuration,
+            lastExecutionTime = state.lastExecutionTime.get(),
+            currentStatus = state.status.get()
+        )
+    }
 
     override fun compareTo(other: Job): Int {
         return other.priority.compareTo(this.priority) // Higher priority first
