@@ -503,14 +503,30 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         val meta = builder.metadata.toMap()
         
         val jobId = id
-        when {
-            builder.cronExpression != null -> scheduleCron(jobId, builder.cronExpression!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.fixedRate != null -> scheduleAtFixedRate(jobId, builder.initialDelay, builder.fixedRate!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.fixedDelay != null -> scheduleWithFixedDelay(jobId, builder.initialDelay, builder.fixedDelay!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            builder.atTime != null -> scheduleAt(jobId, builder.atTime!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
-            else -> schedule(jobId, builder.initialDelay, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+        val job: Job = when {
+            builder.cronExpression != null -> {
+                scheduleCron(jobId, builder.cronExpression!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+                jobRepository.findById(jobId)!!
+            }
+            builder.fixedRate != null -> {
+                scheduleAtFixedRate(jobId, builder.initialDelay, builder.fixedRate!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+                jobRepository.findById(jobId)!!
+            }
+            builder.fixedDelay != null -> {
+                scheduleWithFixedDelay(jobId, builder.initialDelay, builder.fixedDelay!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.maxRepetitions, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+                jobRepository.findById(jobId)!!
+            }
+            builder.atTime != null -> {
+                scheduleAt(jobId, builder.atTime!!, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+                jobRepository.findById(jobId)!!
+            }
+            else -> {
+                schedule(jobId, builder.initialDelay, builder.priority.value, builder.timeoutMs, builder.tags, meta, builder.dependsOn, builder.retryPolicy, builder.concurrencyLimit, builder.executionStrategy, builder.customExecutor, builder.action)
+                jobRepository.findById(jobId)!!
+            }
         }
         
+        builder.listeners.forEach { job.addEventListener(it) }
         builder.group?.let { addJobToGroup(it, jobId) }
     }
 
@@ -591,6 +607,7 @@ class JobBuilder(val id: String) {
     var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE
     var customExecutor: Executor? = null
     var group: String? = null
+    val listeners = mutableListOf<JobEventListener>()
     lateinit var action: (String) -> Any?
 
     fun execute(block: (String) -> Any?) {
@@ -699,6 +716,10 @@ class JobBuilder(val id: String) {
 
     fun inGroup(groupId: String) {
         this.group = groupId
+    }
+
+    fun addListener(listener: JobEventListener) {
+        this.listeners.add(listener)
     }
 }
 
