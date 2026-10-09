@@ -38,7 +38,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             while (running.get() || priorityQueue.isNotEmpty()) {
                 try {
                     val job = priorityQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
-                    if (!running.get() && priorityQueue.isEmpty()) break
+                    if (!running.get()) continue
                     val executor = job.customExecutor ?: workerExecutor
                     executor.execute { runJobInternal(job) }
                 } catch (e: InterruptedException) {
@@ -113,13 +113,15 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
                 policy.delayMs
             }
             
-            scheduler.schedule({
-                try {
-                    priorityQueue.put(job)
-                } catch (retryEx: Throwable) {
-                    handleFailure(job, retryEx)
-                }
-            }, delay, TimeUnit.MILLISECONDS)
+            if (running.get()) {
+                scheduler.schedule({
+                    try {
+                        priorityQueue.put(job)
+                    } catch (retryEx: Throwable) {
+                        handleFailure(job, retryEx)
+                    }
+                }, delay, TimeUnit.MILLISECONDS)
+            }
         }
     }
 
@@ -128,23 +130,23 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val result = job.execute()
             if (result is JobResult.ConcurrencyLimitReached) {
-                scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+                if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             }
         }
 
         if (!isDependencySatisfied(job.id)) {
-            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+            if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
         if (currentGlobalExecutions.get() >= maxGlobalConcurrency) {
-            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+            if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
         val pCount = priorityConcurrentCounts.computeIfAbsent(job.priority.value) { AtomicInteger(0) }
         if (pCount.get() >= maxPerPriorityConcurrency) {
-            scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+            if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             return
         }
 
@@ -292,13 +294,14 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.save(job)
 
         fun scheduleNext() {
+            if (!running.get()) return
             val nextRun = cronExpr.nextExecution(ZonedDateTime.now(ZoneId.systemDefault()))
             val delay = Duration.between(ZonedDateTime.now(ZoneId.systemDefault()), nextRun).toMillis()
             
             val future = scheduler.schedule({
                 try {
                     if (!isDependencySatisfied(job.id)) {
-                        scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
+                        if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
                         return@schedule
                     }
                     priorityQueue.put(job)
