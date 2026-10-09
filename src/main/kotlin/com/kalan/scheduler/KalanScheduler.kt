@@ -568,6 +568,14 @@ class JobBuilder(val id: String) {
         this.fixedRate = ms
     }
 
+    fun every15Minutes() {
+        this.fixedRate = 15 * 60 * 1000L
+    }
+
+    fun every30Minutes() {
+        this.fixedRate = 30 * 60 * 1000L
+    }
+
     fun everyHour() {
         this.fixedRate = 3600000L
     }
@@ -743,5 +751,6 @@ data class CronExpression(
         fun everyMinute() = CronExpression(minute = -1, hour = -1)
         fun everyHour() = CronExpression(minute = 0, hour = -1)
         fun everyDay() = CronExpression(minute = 0, hour = 0)
+        fun everyMidnight() = CronExpression(minute = 0, hour = 0)
     }
 }
