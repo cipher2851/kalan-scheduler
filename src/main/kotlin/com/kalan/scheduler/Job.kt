@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Represents the priority of a job. Higher values indicate higher priority.
@@ -81,6 +82,19 @@ class Job(
     private val state = JobState()
     private val resultFuture = CompletableFuture<Any?>()
     private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
+    private val listeners = CopyOnWriteArrayList<JobEventListener>()
+
+    fun addEventListener(listener: JobEventListener) {
+        listeners.add(listener)
+    }
+
+    fun removeEventListener(listener: JobEventListener) {
+        listeners.remove(listener)
+    }
+
+    private fun notifyListeners(event: JobEvent) {
+        listeners.forEach { it.onEvent(event) }
+    }
 
     fun setPaused(paused: Boolean) {
         state.paused.set(paused)
@@ -140,6 +154,8 @@ class Job(
         state.currentExecutionId.set(executionId)
         state.totalAttempts.incrementAndGet()
         
+        notifyListeners(JobEvent(JobEvent.Type.STARTED, id))
+
         val result = try {
             val res = action(executionId)
             
@@ -168,6 +184,12 @@ class Job(
         val duration = java.time.Duration.between(start, end).toMillis()
         history.addFirst(JobExecutionRecord(executionId, start, end, result, duration))
         if (history.size > 100) history.removeLast()
+
+        if (result is JobResult.Success) {
+            notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id))
+        } else if (result is JobResult.Failure) {
+            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, (result as JobResult.Failure).exception))
+        }
 
         return result
     }

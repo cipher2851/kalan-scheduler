@@ -130,7 +130,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private fun runJobInternal(job: Job) {
         val wrappedAction = wrapExecution(job) {
-            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val start = System.currentTimeMillis()
             val result = job.execute()
             val duration = System.currentTimeMillis() - start
@@ -241,7 +240,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
-            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val start = System.currentTimeMillis()
             val result = job.execute()
             val duration = System.currentTimeMillis() - start
@@ -283,7 +281,6 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
         jobRepository.save(job)
 
         val wrappedAction = wrapExecution(job) { 
-            notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
             val start = System.currentTimeMillis()
             val result = job.execute()
             val duration = System.currentTimeMillis() - start
