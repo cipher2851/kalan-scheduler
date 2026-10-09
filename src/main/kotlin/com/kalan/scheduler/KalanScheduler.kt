@@ -23,7 +23,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private val priorityQueue = PriorityBlockingQueue<Job>()
     private val workerExecutor = ThreadPoolExecutor(
-        corePoolSize, corePoolSize, 0L, TimeUnit.MILLISECONDS, 
+        corePoolSize, corePoolSize * 2, 60L, TimeUnit.SECONDS, 
         LinkedBlockingQueue(), threadFactory
     )
 
@@ -40,7 +40,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             while (running.get() || priorityQueue.isNotEmpty()) {
                 try {
                     val job = priorityQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
-                    if (!running.get()) continue
+                    if (!running.get() && priorityQueue.isEmpty()) break
                     val executor = job.customExecutor ?: workerExecutor
                     executor.execute { runJobInternal(job) }
                 } catch (e: InterruptedException) {
