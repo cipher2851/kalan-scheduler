@@ -8,6 +8,7 @@ import java.time.format.DateTimeParseException
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.pow
 
 class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = DefaultKalanThreadFactory(), private val jobRepository: JobRepository = InMemoryJobRepository()) {
@@ -28,6 +29,7 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private val dispatcherThread: Thread
     private val dependencyGraph = JobDependencyGraph()
+    private val statistics = JobStatistics()
 
     var maxGlobalConcurrency: Int = Int.MAX_VALUE
     var errorHandler: (Throwable) -> Unit = { it.printStackTrace() }
@@ -102,7 +104,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
     private fun handleFailure(job: Job, e: Throwable) {
         job.incrementFailure()
-        notifyListeners(JobEvent(JobEvent.Type.FAILED, job.id))
+        statistics.recordFailure()
+        notifyListeners(JobEvent(JobEvent.Type.FAILED, job.id, e))
         errorHandler(e)
 
         val policy = job.retryPolicy
@@ -128,7 +131,16 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     private fun runJobInternal(job: Job) {
         val wrappedAction = wrapExecution(job) {
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
+            val start = System.currentTimeMillis()
             val result = job.execute()
+            val duration = System.currentTimeMillis() - start
+            
+            if (result is JobResult.Success) {
+                statistics.recordSuccess(duration)
+            } else if (result !is JobResult.Skipped && result !is JobResult.Paused) {
+                statistics.recordFailure()
+            }
+
             if (result is JobResult.ConcurrencyLimitReached) {
                 if (running.get()) scheduler.schedule({ priorityQueue.put(job) }, 100, TimeUnit.MILLISECONDS)
             }
@@ -230,7 +242,16 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
+            val start = System.currentTimeMillis()
             val result = job.execute()
+            val duration = System.currentTimeMillis() - start
+            
+            if (result is JobResult.Success) {
+                statistics.recordSuccess(duration)
+            } else if (result !is JobResult.Skipped && result !is JobResult.Paused) {
+                statistics.recordFailure()
+            }
+
             if (result is JobResult.MaxRepetitionsReached) {
                 cancel(id)
             }
@@ -263,7 +284,16 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
 
         val wrappedAction = wrapExecution(job) { 
             notifyListeners(JobEvent(JobEvent.Type.STARTED, job.id))
+            val start = System.currentTimeMillis()
             val result = job.execute()
+            val duration = System.currentTimeMillis() - start
+            
+            if (result is JobResult.Success) {
+                statistics.recordSuccess(duration)
+            } else if (result !is JobResult.Skipped && result !is JobResult.Paused) {
+                statistics.recordFailure()
+            }
+
             if (result is JobResult.MaxRepetitionsReached) {
                 cancel(id)
             }
@@ -530,7 +560,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
             workerPoolActiveThreads = workerExecutor.activeCount,
             workerPoolQueueSize = workerExecutor.queue.size,
             dispatcherAlive = dispatcherThread.isAlive,
-            totalStoredJobs = jobRepository.findAll().size
+            totalStoredJobs = jobRepository.findAll().size,
+            statistics = statistics.snapshot()
         )
     }
 
@@ -542,6 +573,8 @@ class KalanScheduler(corePoolSize: Int = 1, threadFactory: ThreadFactory = Defau
     fun getCurrentlyExecutingJobs(): List<String> {
         return jobRepository.findAll().filter { it.getJobStatus() == JobExecutionStatus.RUNNING }.map { it.id }
     }
+
+    fun getStatistics(): JobStatisticsSnapshot = statistics.snapshot()
 }
 
 class JobBuilder(val id: String) {
@@ -697,7 +730,8 @@ data class SchedulerHealth(
     val workerPoolActiveThreads: Int,
     val workerPoolQueueSize: Int,
     val dispatcherAlive: Boolean,
-    val totalStoredJobs: Int
+    val totalStoredJobs: Int,
+    val statistics: JobStatisticsSnapshot
 )
 
 class DefaultKalanThreadFactory : ThreadFactory {
@@ -757,3 +791,30 @@ data class CronExpression(
         fun everyMidnight() = CronExpression(minute = 0, hour = 0)
     }
 }
+
+class JobStatistics {
+    private val totalSuccesses = AtomicLong(0)
+    private val totalFailures = AtomicLong(0)
+    private val totalDurationMs = AtomicLong(0)
+
+    fun recordSuccess(durationMs: Long) {
+        totalSuccesses.incrementAndGet()
+        totalDurationMs.addAndGet(durationMs)
+    }
+
+    fun recordFailure() {
+        totalFailures.incrementAndGet()
+    }
+
+    fun snapshot() = JobStatisticsSnapshot(
+        totalSuccesses = totalSuccesses.get(),
+        totalFailures = totalFailures.get(),
+        averageDurationMs = if (totalSuccesses.get() == 0L) 0.0 else totalDurationMs.get().toDouble() / totalSuccesses.get()
+    )
+}
+
+data class JobStatisticsSnapshot(
+    val totalSuccesses: Long,
+    val totalFailures: Long,
+    val averageDurationMs: Double
+)
