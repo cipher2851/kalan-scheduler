@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.pow
 
 /**
  * Represents the priority of a job. Higher values indicate higher priority.
@@ -161,50 +162,77 @@ class Job(
             }
         }
 
-        val executionId = UUID.randomUUID().toString()
+        var currentResult: JobResult
+        var attempts = 0
+        val maxAttempts = (retryPolicy?.maxRetries ?: 0) + 1
         val start = Instant.now()
+        val executionId = UUID.randomUUID().toString()
+        
         state.status.set(JobExecutionStatus.RUNNING)
         state.currentExecutionId.set(executionId)
-        state.totalAttempts.incrementAndGet()
         
         notifyListeners(JobEvent(JobEvent.Type.STARTED, id))
 
-        val result = try {
-            val res = action(executionId)
+        do {
+            attempts++
+            state.totalAttempts.incrementAndGet()
             
-            state.executionCount.incrementAndGet()
-            state.successCount.incrementAndGet()
-            state.lastExecutionTime.set(Instant.now())
-            
-            if (intervalMs == null) {
-                markCompleted()
-                resultFuture.complete(res)
+            currentResult = try {
+                val res = action(executionId)
+                
+                state.executionCount.incrementAndGet()
+                state.successCount.incrementAndGet()
+                state.lastExecutionTime.set(Instant.now())
+                
+                if (intervalMs == null) {
+                    markCompleted()
+                    resultFuture.complete(res)
+                }
+                JobResult.Success(res)
+            } catch (e: Throwable) {
+                incrementFailure()
+                if (intervalMs == null && attempts >= maxAttempts) {
+                    resultFuture.completeExceptionally(e)
+                }
+                JobResult.Failure(e)
             }
-            JobResult.Success(res)
-        } catch (e: Throwable) {
-            incrementFailure()
-            if (intervalMs == null) {
-                resultFuture.completeExceptionally(e)
-            }
-            JobResult.Failure(e)
-        } finally {
-            releaseSlot()
-            state.currentExecutionId.set(null)
-        }
 
-        state.lastResult.set(result)
+            if (currentResult is JobResult.Failure && attempts < maxAttempts) {
+                val delay = calculateRetryDelay(attempts)
+                try {
+                    Thread.sleep(delay)
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+        } while (currentResult is JobResult.Failure && attempts < maxAttempts)
+
+        releaseSlot()
+        state.currentExecutionId.set(null)
+        state.lastResult.set(currentResult)
+        
         val end = Instant.now()
         val duration = java.time.Duration.between(start, end).toMillis()
-        history.addFirst(JobExecutionRecord(executionId, start, end, result, duration))
+        history.addFirst(JobExecutionRecord(executionId, start, end, currentResult, duration))
         if (history.size > 100) history.removeLast()
 
-        if (result is JobResult.Success) {
+        if (currentResult is JobResult.Success) {
             notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id))
-        } else if (result is JobResult.Failure) {
-            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, (result as JobResult.Failure).exception))
+        } else if (currentResult is JobResult.Failure) {
+            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, (currentResult as JobResult.Failure).exception))
         }
 
-        return result
+        return currentResult
+    }
+
+    private fun calculateRetryDelay(attempt: Int): Long {
+        val policy = retryPolicy ?: return 0L
+        return if (policy.useExponentialBackoff) {
+            (policy.delayMs * 2.0.pow(attempt - 1).toLong())
+        } else {
+            policy.delayMs
+        }
     }
 
     fun getExecutionCount(): Int = state.executionCount.get()
