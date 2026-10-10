@@ -45,6 +45,14 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
         return logs.filter { it.jobId == jobId }
     }
 
+    fun getEntriesByResultType(resultClass: Class<out JobResult>): List<AuditEntry> {
+        return logs.filter { resultClass.isInstance(it.result) }
+    }
+
+    fun getTotalExecutionTimeMs(): Long {
+        return logs.sumOf { it.durationMs }
+    }
+
     fun getTotalProcessedCount(): Int = totalProcessed.get()
 
     fun clear() {
