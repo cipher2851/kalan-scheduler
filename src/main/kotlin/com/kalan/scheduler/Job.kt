@@ -305,3 +305,25 @@ sealed class JobResult {
 interface JobFactory {
     fun createJob(id: String, priority: Int, tags: Set<String>): Job
 }
+
+/**
+ * Event emitted by a Job during its lifecycle.
+ */
+data class JobEvent(
+    val type: Type,
+    val jobId: String,
+    val exception: Throwable? = null
+) {
+    enum class Type {
+        STARTED,
+        COMPLETED,
+        FAILED
+    }
+}
+
+/**
+ * Listener for Job lifecycle events.
+ */
+interface JobEventListener {
+    fun onEvent(event: JobEvent)
+}
