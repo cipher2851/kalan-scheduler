@@ -42,6 +42,10 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
         return logs.take(limit)
     }
 
+    fun getEntriesSince(since: Instant): List<AuditEntry> {
+        return logs.filter { it.timestamp.isAfter(since) }
+    }
+
     fun getEntriesForJob(jobId: String): List<AuditEntry> {
         return logs.filter { it.jobId == jobId }
     }
@@ -60,6 +64,10 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
 
     fun getTotalExecutionTimeMs(): Long {
         return logs.sumOf { it.durationMs }
+    }
+
+    fun getTotalExecutionTimeSince(since: Instant): Long {
+        return logs.filter { it.timestamp.isAfter(since) }.sumOf { it.durationMs }
     }
 
     fun getTotalExecutionTimeForResult(resultClass: Class<out JobResult>): Long {
