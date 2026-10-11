@@ -32,7 +32,8 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
         logs.addFirst(entry)
         totalProcessed.incrementAndGet()
 
-        if (logs.size > maxLogSize) {
+        // Maintain a sliding window of the last N executions
+        while (logs.size > maxLogSize) {
             logs.removeLast()
         }
     }
@@ -59,10 +60,37 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
 
     fun getTotalProcessedCount(): Int = totalProcessed.get()
 
+    /**
+     * Provides a summary of audit records for a specific job within the current log window.
+     */
+    fun getJobAuditSummary(jobId: String): JobAuditSummary {
+        val jobEntries = getEntriesForJob(jobId)
+        val total = jobEntries.size
+        val successes = jobEntries.count { it.result is JobResult.Success }
+        val failures = jobEntries.count { it.result is JobResult.Failure }
+        val avgDuration = if (total > 0) jobEntries.map { it.durationMs }.average() else 0.0
+        
+        return JobAuditSummary(
+            jobId = jobId,
+            totalExecutionsInWindow = total,
+            successCount = successes,
+            failureCount = failures,
+            averageDurationMs = avgDuration
+        )
+    }
+
     fun clear() {
         logs.clear()
         totalProcessed.set(0)
     }
+
+    data class JobAuditSummary(
+        val jobId: String,
+        val totalExecutionsInWindow: Int,
+        val successCount: Int,
+        val failureCount: Int,
+        val averageDurationMs: Double
+    )
 }
 
 /**
