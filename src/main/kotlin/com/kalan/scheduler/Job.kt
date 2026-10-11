@@ -171,7 +171,7 @@ class Job(
         state.status.set(JobExecutionStatus.RUNNING)
         state.currentExecutionId.set(executionId)
         
-        notifyListeners(JobEvent(JobEvent.Type.STARTED, id))
+        notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
 
         do {
             attempts++
@@ -218,9 +218,9 @@ class Job(
         if (history.size > 100) history.removeLast()
 
         if (currentResult is JobResult.Success) {
-            notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id))
+            notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id, executionId, currentResult, duration))
         } else if (currentResult is JobResult.Failure) {
-            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, (currentResult as JobResult.Failure).exception))
+            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, executionId, currentResult, duration, (currentResult as JobResult.Failure).exception))
         }
 
         return currentResult
@@ -312,6 +312,9 @@ interface JobFactory {
 data class JobEvent(
     val type: Type,
     val jobId: String,
+    val executionId: String? = null,
+    val result: JobResult? = null,
+    val durationMs: Long = 0,
     val exception: Throwable? = null
 ) {
     enum class Type {
