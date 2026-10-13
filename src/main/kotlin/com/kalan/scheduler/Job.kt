@@ -14,6 +14,16 @@ import java.util.concurrent.TimeoutException
 import kotlin.math.pow
 
 /**
+ * Context provided to a job during its execution.
+ */
+data class JobContext(
+    val executionId: String,
+    val jobId: String,
+    val startTime: Instant,
+    val metadata: Map<String, Any> = emptyMap()
+)
+
+/**
  * Represents the priority of a job. Higher values indicate higher priority.
  */
 @JvmInline
@@ -96,7 +106,7 @@ class JobState {
 
 class Job(
     val id: String,
-    @Volatile var action: (String) -> Any?,
+    @Volatile var action: (JobContext) -> Any?,
     val startTime: Instant,
     val intervalMs: Long? = null,
     @Volatile var priority: JobPriority = JobPriority.NORMAL,
@@ -192,6 +202,7 @@ class Job(
         val maxAttempts = (retryPolicy?.maxRetries ?: 0) + 1
         val start = Instant.now()
         val executionId = UUID.randomUUID().toString()
+        val context = JobContext(executionId, id, start, metadata)
         
         try {
             state.status.set(JobExecutionStatus.RUNNING)
@@ -205,7 +216,7 @@ class Job(
                 
                 currentResult = try {
                     val res = if (timeoutMs != null) {
-                        val timeoutFuture = CompletableFuture.supplyAsync({ action(executionId) }, customExecutor)
+                        val timeoutFuture = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
                         try {
                             timeoutFuture.get(timeoutMs!!, TimeUnit.MILLISECONDS)
                         } catch (e: TimeoutException) {
@@ -215,7 +226,7 @@ class Job(
                             throw e.cause ?: e
                         }
                     } else {
-                        action(executionId)
+                        action(context)
                     }
                     
                     state.executionCount.incrementAndGet()

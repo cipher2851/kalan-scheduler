@@ -430,7 +430,7 @@ class KalanSchedulerTest {
         var receivedId: String? = null
 
         scheduler.schedule("exec-id-job", 0) {
-            receivedId = it
+            receivedId = it.executionId
             latch.countDown()
             null
         }
