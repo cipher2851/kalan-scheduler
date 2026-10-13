@@ -83,9 +83,9 @@ data class JobEventSummary(
 )
 
 /**
- * Encapsulates the runtime state of a Job.
+ * Manages the runtime state, events and statistics of a Job.
  */
-class JobState {
+class JobLifecycleManager {
     val executionCount = AtomicInteger(0)
     val totalAttempts = AtomicInteger(0)
     val successCount = AtomicInteger(0)
@@ -102,6 +102,31 @@ class JobState {
     val completedEvents = AtomicInteger(0)
     val failedEvents = AtomicInteger(0)
     val lastEventType = AtomicReference<JobEvent.Type?>(null)
+
+    fun updateStatus(status: JobExecutionStatus) {
+        this.status.set(status)
+    }
+
+    fun recordAttempt(success: Boolean, result: JobResult? = null) {
+        totalAttempts.incrementAndGet()
+        if (success) {
+            successCount.incrementAndGet()
+            executionCount.incrementAndGet()
+            lastExecutionTime.set(Instant.now())
+        } else {
+            failureCount.incrementAndGet()
+        }
+        lastResult.set(result)
+    }
+
+    fun recordEvent(type: JobEvent.Type) {
+        lastEventType.set(type)
+        when (type) {
+            JobEvent.Type.STARTED -> startedEvents.incrementAndGet()
+            JobEvent.Type.COMPLETED -> completedEvents.incrementAndGet()
+            JobEvent.Type.FAILED -> failedEvents.incrementAndGet()
+        }
+    }
 }
 
 class Job(
@@ -120,7 +145,7 @@ class Job(
     @Volatile var executionStrategy: JobExecutionStrategy = JobExecutionStrategy.QUEUE,
     val customExecutor: Executor? = null
 ) : Comparable<Job> {
-    private val state = JobState()
+    private val lifecycle = JobLifecycleManager()
     private val resultFuture = CompletableFuture<Any?>()
     private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
@@ -134,56 +159,49 @@ class Job(
     }
 
     private fun notifyListeners(event: JobEvent) {
-        // Update internal event summary
-        when (event.type) {
-            JobEvent.Type.STARTED -> state.startedEvents.incrementAndGet()
-            JobEvent.Type.COMPLETED -> state.completedEvents.incrementAndGet()
-            JobEvent.Type.FAILED -> state.failedEvents.incrementAndGet()
-        }
-        state.lastEventType.set(event.type)
-        
+        lifecycle.recordEvent(event.type)
         listeners.forEach { it.onEvent(event) }
     }
 
     fun setPaused(paused: Boolean) {
-        state.paused.set(paused)
-        state.status.set(if (paused) JobExecutionStatus.PAUSED else JobExecutionStatus.QUEUED)
+        lifecycle.paused.set(paused)
+        lifecycle.updateStatus(if (paused) JobExecutionStatus.PAUSED else JobExecutionStatus.QUEUED)
     }
 
-    fun isPaused(): Boolean = state.paused.get()
+    fun isPaused(): Boolean = lifecycle.paused.get()
 
     fun markCompleted() {
-        state.completed.set(true)
-        state.status.set(JobExecutionStatus.COMPLETED)
+        lifecycle.completed.set(true)
+        lifecycle.updateStatus(JobExecutionStatus.COMPLETED)
     }
 
-    fun isCompleted(): Boolean = state.completed.get()
+    fun isCompleted(): Boolean = lifecycle.completed.get()
 
     fun incrementFailure() {
-        state.failureCount.incrementAndGet()
-        state.status.set(JobExecutionStatus.FAILED)
+        lifecycle.failureCount.incrementAndGet()
+        lifecycle.updateStatus(JobExecutionStatus.FAILED)
     }
 
-    fun getFailureCount(): Int = state.failureCount.get()
-    fun getSuccessCount(): Int = state.successCount.get()
+    fun getFailureCount(): Int = lifecycle.failureCount.get()
+    fun getSuccessCount(): Int = lifecycle.successCount.get()
 
     fun tryAcquireSlot(): Boolean {
         if (concurrencyLimit == null) return true
         while (true) {
-            val current = state.activeExecutions.get()
+            val current = lifecycle.activeExecutions.get()
             if (current >= concurrencyLimit!!) return false
-            if (state.activeExecutions.compareAndSet(current, current + 1)) return true
+            if (lifecycle.activeExecutions.compareAndSet(current, current + 1)) return true
         }
     }
 
     fun releaseSlot() {
         if (concurrencyLimit != null) {
-            state.activeExecutions.decrementAndGet()
+            lifecycle.activeExecutions.decrementAndGet()
         }
     }
 
     fun execute(): JobResult {
-        if (state.paused.get()) return JobResult.Paused
+        if (lifecycle.paused.get()) return JobResult.Paused
         
         if (isMaxRepetitionsReached()) {
             return JobResult.MaxRepetitionsReached
@@ -205,14 +223,14 @@ class Job(
         val context = JobContext(executionId, id, start, metadata)
         
         try {
-            state.status.set(JobExecutionStatus.RUNNING)
-            state.currentExecutionId.set(executionId)
+            lifecycle.updateStatus(JobExecutionStatus.RUNNING)
+            lifecycle.currentExecutionId.set(executionId)
             
             notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
 
             do {
                 attempts++
-                state.totalAttempts.incrementAndGet()
+                lifecycle.totalAttempts.incrementAndGet()
                 
                 currentResult = try {
                     val res = if (timeoutMs != null) {
@@ -229,9 +247,7 @@ class Job(
                         action(context)
                     }
                     
-                    state.executionCount.incrementAndGet()
-                    state.successCount.incrementAndGet()
-                    state.lastExecutionTime.set(Instant.now())
+                    lifecycle.recordAttempt(success = true, result = JobResult.Success(res))
                     
                     if (intervalMs == null) {
                         markCompleted()
@@ -258,8 +274,8 @@ class Job(
                 }
             } while (currentResult is JobResult.Failure && attempts < maxAttempts)
 
-            state.currentExecutionId.set(null)
-            state.lastResult.set(currentResult)
+            lifecycle.currentExecutionId.set(null)
+            lifecycle.lastResult.set(currentResult)
             
             val end = Instant.now()
             val duration = java.time.Duration.between(start, end).toMillis()
@@ -287,20 +303,20 @@ class Job(
         }
     }
 
-    fun getExecutionCount(): Int = state.executionCount.get()
-    fun getTotalAttempts(): Int = state.totalAttempts.get()
+    fun getExecutionCount(): Int = lifecycle.executionCount.get()
+    fun getTotalAttempts(): Int = lifecycle.totalAttempts.get()
     
-    fun getLastExecutionTime(): Instant? = state.lastExecutionTime.get()
+    fun getLastExecutionTime(): Instant? = lifecycle.lastExecutionTime.get()
 
     fun getLastResult(): Any? {
-        val res = state.lastResult.get()
+        val res = lifecycle.lastResult.get()
         return if (res is JobResult.Success) res.value else null
     }
 
-    fun getLastJobResult(): JobResult? = state.lastResult.get()
+    fun getLastJobResult(): JobResult? = lifecycle.lastResult.get()
 
     fun isMaxRepetitionsReached(): Boolean {
-        return maxRepetitions != null && state.executionCount.get() >= maxRepetitions!!
+        return maxRepetitions != null && lifecycle.executionCount.get() >= maxRepetitions!!
     }
 
     fun getResultFuture(): CompletableFuture<Any?> = resultFuture
@@ -310,23 +326,23 @@ class Job(
     @Suppress("UNCHECKED_CAST")
     fun <T> getMetadataValue(key: String): T? = metadata[key] as? T
 
-    fun getJobStatus(): JobExecutionStatus = state.status.get()
+    fun getJobStatus(): JobExecutionStatus = lifecycle.status.get()
 
-    fun getCurrentExecutionId(): String? = state.currentExecutionId.get()
+    fun getCurrentExecutionId(): String? = lifecycle.currentExecutionId.get()
 
     fun getEventSummary(): JobEventSummary {
         return JobEventSummary(
-            startedCount = state.startedEvents.get(),
-            completedCount = state.completedEvents.get(),
-            failedCount = state.failedEvents.get(),
-            lastEventType = state.lastEventType.get()
+            startedCount = lifecycle.startedEvents.get(),
+            completedCount = lifecycle.completedEvents.get(),
+            failedCount = lifecycle.failedEvents.get(),
+            lastEventType = lifecycle.lastEventType.get()
         )
     }
 
     fun getStatistics(): JobStatistics {
-        val total = state.totalAttempts.get()
-        val success = state.successCount.get()
-        val failure = state.failureCount.get()
+        val total = lifecycle.totalAttempts.get()
+        val success = lifecycle.successCount.get()
+        val failure = lifecycle.failureCount.get()
         val avgDuration = history.map { it.durationMs }.average().takeIf { !it.isNaN() } ?: 0.0
         
         return JobStatistics(
@@ -335,8 +351,8 @@ class Job(
             failureCount = failure,
             successRate = if (total > 0) success.toDouble() / total else 0.0,
             averageDurationMs = avgDuration,
-            lastExecutionTime = state.lastExecutionTime.get(),
-            currentStatus = state.status.get()
+            lastExecutionTime = lifecycle.lastExecutionTime.get(),
+            currentStatus = lifecycle.status.get()
         )
     }
 
