@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import kotlin.math.pow
 
 /**
@@ -178,7 +180,19 @@ class Job(
             state.totalAttempts.incrementAndGet()
             
             currentResult = try {
-                val res = action(executionId)
+                val res = if (timeoutMs != null) {
+                    val timeoutFuture = CompletableFuture.supplyAsync({ action(executionId) }, customExecutor)
+                    try {
+                        timeoutFuture.get(timeoutMs!!, TimeUnit.MILLISECONDS)
+                    } catch (e: TimeoutException) {
+                        timeoutFuture.cancel(true)
+                        throw e
+                    } catch (e: java.util.concurrent.ExecutionException) {
+                        throw e.cause ?: e
+                    }
+                } else {
+                    action(executionId)
+                }
                 
                 state.executionCount.incrementAndGet()
                 state.successCount.incrementAndGet()
