@@ -63,6 +63,16 @@ data class JobStatistics(
 )
 
 /**
+ * Aggregated summary of events for a job.
+ */
+data class JobEventSummary(
+    val startedCount: Int,
+    val completedCount: Int,
+    val failedCount: Int,
+    val lastEventType: JobEvent.Type? = null
+)
+
+/**
  * Encapsulates the runtime state of a Job.
  */
 class JobState {
@@ -77,6 +87,11 @@ class JobState {
     val activeExecutions = AtomicInteger(0)
     val status = AtomicReference<JobExecutionStatus>(JobExecutionStatus.QUEUED)
     val currentExecutionId = AtomicReference<String?>(null)
+    
+    val startedEvents = AtomicInteger(0)
+    val completedEvents = AtomicInteger(0)
+    val failedEvents = AtomicInteger(0)
+    val lastEventType = AtomicReference<JobEvent.Type?>(null)
 }
 
 class Job(
@@ -109,6 +124,14 @@ class Job(
     }
 
     private fun notifyListeners(event: JobEvent) {
+        // Update internal event summary
+        when (event.type) {
+            JobEvent.Type.STARTED -> state.startedEvents.incrementAndGet()
+            JobEvent.Type.COMPLETED -> state.completedEvents.incrementAndGet()
+            JobEvent.Type.FAILED -> state.failedEvents.incrementAndGet()
+        }
+        state.lastEventType.set(event.type)
+        
         listeners.forEach { it.onEvent(event) }
     }
 
@@ -275,6 +298,15 @@ class Job(
     fun getJobStatus(): JobExecutionStatus = state.status.get()
 
     fun getCurrentExecutionId(): String? = state.currentExecutionId.get()
+
+    fun getEventSummary(): JobEventSummary {
+        return JobEventSummary(
+            startedCount = state.startedEvents.get(),
+            completedCount = state.completedEvents.get(),
+            failedCount = state.failedEvents.get(),
+            lastEventType = state.lastEventType.get()
+        )
+    }
 
     fun getStatistics(): JobStatistics {
         val total = state.totalAttempts.get()
