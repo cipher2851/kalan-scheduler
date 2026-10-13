@@ -149,6 +149,7 @@ class Job(
     private val resultFuture = CompletableFuture<Any?>()
     private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
+    private val resultListeners = CopyOnWriteArrayList<JobResultListener>()
 
     fun addEventListener(listener: JobEventListener) {
         listeners.add(listener)
@@ -158,9 +159,21 @@ class Job(
         listeners.remove(listener)
     }
 
+    fun addResultListener(listener: JobResultListener) {
+        resultListeners.add(listener)
+    }
+
+    fun removeResultListener(listener: JobResultListener) {
+        resultListeners.remove(listener)
+    }
+
     private fun notifyListeners(event: JobEvent) {
         lifecycle.recordEvent(event.type)
         listeners.forEach { it.onEvent(event) }
+    }
+
+    private fun notifyResultListeners(result: JobResult) {
+        resultListeners.forEach { it.onResult(id, result) }
     }
 
     fun setPaused(paused: Boolean) {
@@ -288,6 +301,7 @@ class Job(
                 notifyListeners(JobEvent(JobEvent.Type.FAILED, id, executionId, currentResult, duration, (currentResult as JobResult.Failure).exception))
             }
 
+            notifyResultListeners(currentResult)
             return currentResult
         } finally {
             releaseSlot()
@@ -406,4 +420,11 @@ data class JobEvent(
  */
 interface JobEventListener {
     fun onEvent(event: JobEvent)
+}
+
+/**
+ * Listener specifically for job completion results.
+ */
+interface JobResultListener {
+    fun onResult(jobId: String, result: JobResult)
 }
