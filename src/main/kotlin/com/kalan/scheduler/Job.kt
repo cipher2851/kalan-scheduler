@@ -193,74 +193,78 @@ class Job(
         val start = Instant.now()
         val executionId = UUID.randomUUID().toString()
         
-        state.status.set(JobExecutionStatus.RUNNING)
-        state.currentExecutionId.set(executionId)
-        
-        notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
-
-        do {
-            attempts++
-            state.totalAttempts.incrementAndGet()
+        try {
+            state.status.set(JobExecutionStatus.RUNNING)
+            state.currentExecutionId.set(executionId)
             
-            currentResult = try {
-                val res = if (timeoutMs != null) {
-                    val timeoutFuture = CompletableFuture.supplyAsync({ action(executionId) }, customExecutor)
-                    try {
-                        timeoutFuture.get(timeoutMs!!, TimeUnit.MILLISECONDS)
-                    } catch (e: TimeoutException) {
-                        timeoutFuture.cancel(true)
-                        throw e
-                    } catch (e: java.util.concurrent.ExecutionException) {
-                        throw e.cause ?: e
+            notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
+
+            do {
+                attempts++
+                state.totalAttempts.incrementAndGet()
+                
+                currentResult = try {
+                    val res = if (timeoutMs != null) {
+                        val timeoutFuture = CompletableFuture.supplyAsync({ action(executionId) }, customExecutor)
+                        try {
+                            timeoutFuture.get(timeoutMs!!, TimeUnit.MILLISECONDS)
+                        } catch (e: TimeoutException) {
+                            timeoutFuture.cancel(true)
+                            throw e
+                        } catch (e: java.util.concurrent.ExecutionException) {
+                            throw e.cause ?: e
+                        }
+                    } else {
+                        action(executionId)
                     }
-                } else {
-                    action(executionId)
+                    
+                    state.executionCount.incrementAndGet()
+                    state.successCount.incrementAndGet()
+                    state.lastExecutionTime.set(Instant.now())
+                    
+                    if (intervalMs == null) {
+                        markCompleted()
+                        resultFuture.complete(res)
+                    }
+                    JobResult.Success(res)
+                } catch (e: Throwable) {
+                    incrementFailure()
+                    if (intervalMs == null && attempts >= maxAttempts) {
+                        resultFuture.completeExceptionally(e)
+                    }
+                    JobResult.Failure(e)
                 }
-                
-                state.executionCount.incrementAndGet()
-                state.successCount.incrementAndGet()
-                state.lastExecutionTime.set(Instant.now())
-                
-                if (intervalMs == null) {
-                    markCompleted()
-                    resultFuture.complete(res)
+
+                if (currentResult is JobResult.Failure && attempts < maxAttempts) {
+                    val delay = calculateRetryDelay(attempts)
+                    try {
+                        Thread.sleep(delay)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        currentResult = JobResult.Failure(ie)
+                        break
+                    }
                 }
-                JobResult.Success(res)
-            } catch (e: Throwable) {
-                incrementFailure()
-                if (intervalMs == null && attempts >= maxAttempts) {
-                    resultFuture.completeExceptionally(e)
-                }
-                JobResult.Failure(e)
+            } while (currentResult is JobResult.Failure && attempts < maxAttempts)
+
+            state.currentExecutionId.set(null)
+            state.lastResult.set(currentResult)
+            
+            val end = Instant.now()
+            val duration = java.time.Duration.between(start, end).toMillis()
+            history.addFirst(JobExecutionRecord(executionId, start, end, currentResult, duration))
+            if (history.size > 100) history.removeLast()
+
+            if (currentResult is JobResult.Success) {
+                notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id, executionId, currentResult, duration))
+            } else if (currentResult is JobResult.Failure) {
+                notifyListeners(JobEvent(JobEvent.Type.FAILED, id, executionId, currentResult, duration, (currentResult as JobResult.Failure).exception))
             }
 
-            if (currentResult is JobResult.Failure && attempts < maxAttempts) {
-                val delay = calculateRetryDelay(attempts)
-                try {
-                    Thread.sleep(delay)
-                } catch (ie: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    break
-                }
-            }
-        } while (currentResult is JobResult.Failure && attempts < maxAttempts)
-
-        releaseSlot()
-        state.currentExecutionId.set(null)
-        state.lastResult.set(currentResult)
-        
-        val end = Instant.now()
-        val duration = java.time.Duration.between(start, end).toMillis()
-        history.addFirst(JobExecutionRecord(executionId, start, end, currentResult, duration))
-        if (history.size > 100) history.removeLast()
-
-        if (currentResult is JobResult.Success) {
-            notifyListeners(JobEvent(JobEvent.Type.COMPLETED, id, executionId, currentResult, duration))
-        } else if (currentResult is JobResult.Failure) {
-            notifyListeners(JobEvent(JobEvent.Type.FAILED, id, executionId, currentResult, duration, (currentResult as JobResult.Failure).exception))
+            return currentResult
+        } finally {
+            releaseSlot()
         }
-
-        return currentResult
     }
 
     private fun calculateRetryDelay(attempt: Int): Long {
