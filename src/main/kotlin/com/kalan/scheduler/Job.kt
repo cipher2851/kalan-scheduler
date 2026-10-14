@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
@@ -91,6 +92,7 @@ class JobLifecycleManager {
     val totalAttempts = AtomicInteger(0)
     val successCount = AtomicInteger(0)
     val failureCount = AtomicInteger(0)
+    val totalDurationMs = AtomicLong(0)
     val lastExecutionTime = AtomicReference<Instant?>(null)
     val paused = AtomicBoolean(false)
     val completed = AtomicBoolean(false)
@@ -108,8 +110,9 @@ class JobLifecycleManager {
         this.status.set(status)
     }
 
-    fun recordAttempt(success: Boolean, result: JobResult? = null) {
+    fun recordAttempt(success: Boolean, result: JobResult? = null, durationMs: Long = 0) {
         totalAttempts.incrementAndGet()
+        totalDurationMs.addAndGet(durationMs)
         if (success) {
             successCount.incrementAndGet()
             executionCount.incrementAndGet()
@@ -246,6 +249,7 @@ class Job(
                 attempts++
                 lifecycle.totalAttempts.incrementAndGet()
                 
+                val attemptStart = Instant.now()
                 currentResult = try {
                     val res = if (timeoutMs != null) {
                         val timeoutFuture = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
@@ -261,7 +265,8 @@ class Job(
                         action(context)
                     }
                     
-                    lifecycle.recordAttempt(success = true, result = JobResult.Success(res))
+                    val duration = java.time.Duration.between(attemptStart, Instant.now()).toMillis()
+                    lifecycle.recordAttempt(success = true, result = JobResult.Success(res), durationMs = duration)
                     
                     if (intervalMs == null) {
                         markCompleted()
@@ -269,6 +274,8 @@ class Job(
                     }
                     JobResult.Success(res)
                 } catch (e: Throwable) {
+                    val duration = java.time.Duration.between(attemptStart, Instant.now()).toMillis()
+                    lifecycle.recordAttempt(success = false, result = JobResult.Failure(e), durationMs = duration)
                     incrementFailure()
                     if (intervalMs == null && attempts >= maxAttempts) {
                         resultFuture.completeExceptionally(e)
