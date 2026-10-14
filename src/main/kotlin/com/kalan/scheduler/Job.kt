@@ -67,6 +67,7 @@ data class JobStatistics(
     val successCount: Int,
     val failureCount: Int,
     val successRate: Double,
+    val failureRate: Double,
     val averageDurationMs: Double,
     val lastExecutionTime: Instant?,
     val currentStatus: JobExecutionStatus
@@ -364,6 +365,7 @@ class Job(
             successCount = success,
             failureCount = failure,
             successRate = if (total > 0) success.toDouble() / total else 0.0,
+            failureRate = if (total > 0) failure.toDouble() / total else 0.0,
             averageDurationMs = avgDuration,
             lastExecutionTime = lifecycle.lastExecutionTime.get(),
             currentStatus = lifecycle.status.get()
