@@ -379,9 +379,31 @@ class Job(
         )
     }
 
+    /**
+     * Returns a health status based on success/failure ratio.
+     * Consider a job unhealthy if failure rate exceeds 50% after at least 2 attempts.
+     */
+    fun getHealthStatus(): JobHealth {
+        val total = lifecycle.totalAttempts.get()
+        val failure = lifecycle.failureCount.get()
+        val failureRate = if (total > 0) failure.toDouble() / total else 0.0
+        
+        return if (total >= 2 && failureRate > 0.5) {
+            JobHealth.UNHEALTHY
+        } else if (total == 0) {
+            JobHealth.UNKNOWN
+        } else {
+            JobHealth.HEALTHY
+        }
+    }
+
     override fun compareTo(other: Job): Int {
         return other.priority.compareTo(this.priority) // Higher priority first
     }
+}
+
+enum class JobHealth {
+    HEALTHY, UNHEALTHY, UNKNOWN
 }
 
 data class RetryPolicy(
