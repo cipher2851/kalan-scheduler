@@ -137,6 +137,16 @@ class JobLifecycleManager {
             JobEvent.Type.FAILED -> failedEvents.incrementAndGet()
         }
     }
+
+    /**
+     * Calculates a rolling average of the last N durations provided.
+     * This helps in understanding recent performance trends.
+     */
+    fun calculateRollingAverage(history: List<JobExecutionRecord>, windowSize: Int = 10): Double {
+        val recent = history.take(windowSize)
+        if (recent.isEmpty()) return 0.0
+        return recent.map { it.durationMs }.average()
+    }
 }
 
 class Job(
