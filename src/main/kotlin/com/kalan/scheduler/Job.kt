@@ -70,6 +70,7 @@ data class JobStatistics(
     val successRate: Double,
     val failureRate: Double,
     val averageDurationMs: Double,
+    val totalDurationMs: Long,
     val lastExecutionTime: Instant?,
     val currentStatus: JobExecutionStatus
 )
@@ -93,6 +94,7 @@ class JobLifecycleManager {
     val successCount = AtomicInteger(0)
     val failureCount = AtomicInteger(0)
     val totalDurationMs = AtomicLong(0)
+    val totalFailureDurationMs = AtomicLong(0)
     val lastExecutionTime = AtomicReference<Instant?>(null)
     val paused = AtomicBoolean(false)
     val completed = AtomicBoolean(false)
@@ -119,6 +121,7 @@ class JobLifecycleManager {
             lastExecutionTime.set(Instant.now())
         } else {
             failureCount.incrementAndGet()
+            totalFailureDurationMs.addAndGet(durationMs)
         }
         lastResult.set(result)
     }
@@ -374,6 +377,7 @@ class Job(
             successRate = if (total > 0) success.toDouble() / total else 0.0,
             failureRate = if (total > 0) failure.toDouble() / total else 0.0,
             averageDurationMs = avgDuration,
+            totalDurationMs = lifecycle.totalDurationMs.get(),
             lastExecutionTime = lifecycle.lastExecutionTime.get(),
             currentStatus = lifecycle.status.get()
         )
