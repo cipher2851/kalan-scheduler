@@ -267,6 +267,9 @@ class Job(
                         } catch (e: java.util.concurrent.ExecutionException) {
                             throw e.cause ?: e
                         }
+                    } else if (customExecutor != null) {
+                        val resultFuture = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
+                        resultFuture.join()
                     } else {
                         action(context)
                     }
