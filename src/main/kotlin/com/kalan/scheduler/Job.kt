@@ -102,6 +102,7 @@ class JobLifecycleManager {
     val activeExecutions = AtomicInteger(0)
     val status = AtomicReference<JobExecutionStatus>(JobExecutionStatus.QUEUED)
     val currentExecutionId = AtomicReference<String?>(null)
+    val lastDurationMs = AtomicLong(0)
     
     val startedEvents = AtomicInteger(0)
     val completedEvents = AtomicInteger(0)
@@ -115,6 +116,7 @@ class JobLifecycleManager {
     fun recordAttempt(success: Boolean, result: JobResult? = null, durationMs: Long = 0) {
         totalAttempts.incrementAndGet()
         totalDurationMs.addAndGet(durationMs)
+        lastDurationMs.set(durationMs)
         if (success) {
             successCount.incrementAndGet()
             executionCount.incrementAndGet()
@@ -368,7 +370,7 @@ class Job(
         val total = lifecycle.totalAttempts.get()
         val success = lifecycle.successCount.get()
         val failure = lifecycle.failureCount.get()
-        val avgDuration = history.map { it.durationMs }.average().takeIf { !it.isNaN() } ?: 0.0
+        val avgDuration = if (total > 0) lifecycle.totalDurationMs.get().toDouble() / total else 0.0
         
         return JobStatistics(
             totalAttempts = total,
