@@ -72,7 +72,8 @@ data class JobStatistics(
     val averageDurationMs: Double,
     val totalDurationMs: Long,
     val lastExecutionTime: Instant?,
-    val currentStatus: JobExecutionStatus
+    val currentStatus: JobExecutionStatus,
+    val lastDurationMs: Long
 )
 
 /**
@@ -381,7 +382,8 @@ class Job(
             averageDurationMs = avgDuration,
             totalDurationMs = lifecycle.totalDurationMs.get(),
             lastExecutionTime = lifecycle.lastExecutionTime.get(),
-            currentStatus = lifecycle.status.get()
+            currentStatus = lifecycle.status.get(),
+            lastDurationMs = lifecycle.lastDurationMs.get()
         )
     }
 
