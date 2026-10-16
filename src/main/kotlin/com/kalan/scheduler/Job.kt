@@ -73,7 +73,8 @@ data class JobStatistics(
     val totalDurationMs: Long,
     val lastExecutionTime: Instant?,
     val currentStatus: JobExecutionStatus,
-    val lastDurationMs: Long
+    val lastDurationMs: Long,
+    val windowedFailureRate: Double
 )
 
 /**
@@ -110,6 +111,9 @@ class JobLifecycleManager {
     val failedEvents = AtomicInteger(0)
     val lastEventType = AtomicReference<JobEvent.Type?>(null)
 
+    private val recentOutcomes = ConcurrentLinkedDeque<Boolean>()
+    private val windowSize = 50
+
     fun updateStatus(status: JobExecutionStatus) {
         this.status.set(status)
     }
@@ -118,6 +122,12 @@ class JobLifecycleManager {
         totalAttempts.incrementAndGet()
         totalDurationMs.addAndGet(durationMs)
         lastDurationMs.set(durationMs)
+        
+        recentOutcomes.addFirst(success)
+        if (recentOutcomes.size > windowSize) {
+            recentOutcomes.removeLast()
+        }
+
         if (success) {
             successCount.incrementAndGet()
             executionCount.incrementAndGet()
@@ -136,6 +146,12 @@ class JobLifecycleManager {
             JobEvent.Type.COMPLETED -> completedEvents.incrementAndGet()
             JobEvent.Type.FAILED -> failedEvents.incrementAndGet()
         }
+    }
+
+    fun getWindowedFailureRate(): Double {
+        if (recentOutcomes.isEmpty()) return 0.0
+        val failures = recentOutcomes.count { !it }
+        return failures.toDouble() / recentOutcomes.size
     }
 
     /**
@@ -396,7 +412,8 @@ class Job(
             totalDurationMs = lifecycle.totalDurationMs.get(),
             lastExecutionTime = lifecycle.lastExecutionTime.get(),
             currentStatus = lifecycle.status.get(),
-            lastDurationMs = lifecycle.lastDurationMs.get()
+            lastDurationMs = lifecycle.lastDurationMs.get(),
+            windowedFailureRate = lifecycle.getWindowedFailureRate()
         )
     }
 
