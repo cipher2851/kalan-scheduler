@@ -74,7 +74,8 @@ data class JobStatistics(
     val lastExecutionTime: Instant?,
     val currentStatus: JobExecutionStatus,
     val lastDurationMs: Long,
-    val windowedFailureRate: Double
+    val windowedFailureRate: Double,
+    val rollingAverageDurationMs: Double
 )
 
 /**
@@ -413,7 +414,8 @@ class Job(
             lastExecutionTime = lifecycle.lastExecutionTime.get(),
             currentStatus = lifecycle.status.get(),
             lastDurationMs = lifecycle.lastDurationMs.get(),
-            windowedFailureRate = lifecycle.getWindowedFailureRate()
+            windowedFailureRate = lifecycle.getWindowedFailureRate(),
+            rollingAverageDurationMs = lifecycle.calculateRollingAverage(history.toList())
         )
     }
 
