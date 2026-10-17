@@ -15,14 +15,22 @@ import java.util.concurrent.TimeoutException
 import kotlin.math.pow
 
 /**
- * Context provided to a job during its execution.
+ * Runtime context provided to a job during its execution.
+ * Provides access to both metadata and the current execution's state.
  */
-data class JobContext(
+class JobExecutionContext(
     val executionId: String,
     val jobId: String,
     val startTime: Instant,
-    val metadata: Map<String, Any> = emptyMap()
-)
+    val metadata: Map<String, Any> = emptyMap(),
+    private val job: Job
+) {
+    val isCancelled: Boolean get() = job.getJobStatus() == JobExecutionStatus.PAUSED
+    
+    fun getStatistics(): JobStatistics = job.getStatistics()
+    
+    fun getExecutionCount(): Int = job.getExecutionCount()
+}
 
 /**
  * Represents the priority of a job. Higher values indicate higher priority.
@@ -175,7 +183,7 @@ class JobLifecycleManager {
 
 class Job(
     val id: String,
-    @Volatile var action: (JobContext) -> Any?,
+    @Volatile var action: (JobExecutionContext) -> Any?,
     val startTime: Instant,
     val intervalMs: Long? = null,
     @Volatile var priority: JobPriority = JobPriority.NORMAL,
@@ -290,7 +298,7 @@ class Job(
         val maxAttempts = (retryPolicy?.maxRetries ?: 0) + 1
         val start = Instant.now()
         val executionId = UUID.randomUUID().toString()
-        val context = JobContext(executionId, id, start, metadata)
+        val context = JobExecutionContext(executionId, id, start, metadata, this)
         
         try {
             lifecycle.updateStatus(JobExecutionStatus.RUNNING)
