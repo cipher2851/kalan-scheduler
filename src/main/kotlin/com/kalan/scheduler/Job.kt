@@ -75,6 +75,7 @@ data class JobStatistics(
     val currentStatus: JobExecutionStatus,
     val lastDurationMs: Long,
     val windowedFailureRate: Double,
+    val windowedSuccessRate: Double,
     val rollingAverageDurationMs: Double
 )
 
@@ -153,6 +154,12 @@ class JobLifecycleManager {
         if (recentOutcomes.isEmpty()) return 0.0
         val failures = recentOutcomes.count { !it }
         return failures.toDouble() / recentOutcomes.size
+    }
+
+    fun getWindowedSuccessRate(): Double {
+        if (recentOutcomes.isEmpty()) return 0.0
+        val successes = recentOutcomes.count { it }
+        return successes.toDouble() / recentOutcomes.size
     }
 
     /**
@@ -415,6 +422,7 @@ class Job(
             currentStatus = lifecycle.status.get(),
             lastDurationMs = lifecycle.lastDurationMs.get(),
             windowedFailureRate = lifecycle.getWindowedFailureRate(),
+            windowedSuccessRate = lifecycle.getWindowedSuccessRate(),
             rollingAverageDurationMs = lifecycle.calculateRollingAverage(history.toList())
         )
     }
