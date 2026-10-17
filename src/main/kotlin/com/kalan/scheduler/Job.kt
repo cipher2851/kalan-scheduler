@@ -194,6 +194,7 @@ class Job(
     private val history = ConcurrentLinkedDeque<JobExecutionRecord>()
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
     private val resultListeners = CopyOnWriteArrayList<JobResultListener>()
+    private val outcomeListeners = CopyOnWriteArrayList<JobOutcomeListener>()
 
     fun addEventListener(listener: JobEventListener) {
         listeners.add(listener)
@@ -211,6 +212,14 @@ class Job(
         resultListeners.remove(listener)
     }
 
+    fun addOutcomeListener(listener: JobOutcomeListener) {
+        outcomeListeners.add(listener)
+    }
+
+    fun removeOutcomeListener(listener: JobOutcomeListener) {
+        outcomeListeners.remove(listener)
+    }
+
     private fun notifyListeners(event: JobEvent) {
         lifecycle.recordEvent(event.type)
         listeners.forEach { it.onEvent(event) }
@@ -218,6 +227,10 @@ class Job(
 
     private fun notifyResultListeners(result: JobResult) {
         resultListeners.forEach { it.onResult(id, result) }
+    }
+
+    private fun notifyOutcomeListeners(result: JobResult) {
+        outcomeListeners.forEach { it.onOutcome(id, result) }
     }
 
     fun setPaused(paused: Boolean) {
@@ -353,6 +366,7 @@ class Job(
             }
 
             notifyResultListeners(currentResult)
+            notifyOutcomeListeners(currentResult)
             return currentResult
         } finally {
             releaseSlot()
@@ -506,4 +520,11 @@ interface JobEventListener {
  */
 interface JobResultListener {
     fun onResult(jobId: String, result: JobResult)
+}
+
+/**
+ * Listener for job outcomes, allowing decoupled handling of success/failure.
+ */
+interface JobOutcomeListener {
+    fun onOutcome(jobId: String, result: JobResult)
 }
