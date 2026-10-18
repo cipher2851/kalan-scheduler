@@ -583,6 +583,7 @@ class KalanSchedulerTest {
         assertTrue(latch.await(500, TimeUnit.MILLISECONDS))
         val info = scheduler.getJobInfo("info-result-job")
         assertEquals(expectedValue, info?.lastResult)
+        
         scheduler.shutdown()
     }
 

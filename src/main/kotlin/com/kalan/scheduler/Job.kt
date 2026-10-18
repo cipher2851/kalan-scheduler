@@ -60,6 +60,43 @@ class JobExecutionLimitInterceptor(private val maxConcurrent: Int) : JobExecutio
 }
 
 /**
+ * Interceptor that throttles the rate of job executions using a token bucket algorithm.
+ */
+class JobThrottlingInterceptor(private val throttler: JobThrottler) : JobExecutionInterceptor {
+    override fun beforeExecute(context: JobExecutionContext): Boolean {
+        return throttler.tryAcquire()
+    }
+
+    override fun afterExecute(context: JobExecutionContext, result: JobResult) {}
+}
+
+/**
+ * Implements a Token Bucket algorithm to limit the rate of job executions.
+ */
+class JobThrottler(private val maxTokens: Double, private val refillRatePerSecond: Double) {
+    private var tokens = maxTokens
+    private var lastRefillTime = System.nanoTime()
+
+    @Synchronized
+    fun tryAcquire(): Boolean {
+        refill()
+        return if (tokens >= 1.0) {
+            tokens -= 1.0
+            true
+        } else {
+            false
+        }
+    }
+
+    private fun refill() {
+        val now = System.nanoTime()
+        val deltaSeconds = (now - lastRefillTime).toDouble() / 1_000_000_000.0
+        tokens = (tokens + deltaSeconds * refillRatePerSecond).coerceAtMost(maxTokens)
+        lastRefillTime = now
+    }
+}
+
+/**
  * Represents the priority of a job. Higher values indicate higher priority.
  */
 @JvmInline
