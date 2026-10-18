@@ -41,6 +41,25 @@ interface JobExecutionInterceptor {
 }
 
 /**
+ * Interceptor that limits the number of concurrent executions across multiple jobs.
+ */
+class JobExecutionLimitInterceptor(private val maxConcurrent: Int) : JobExecutionInterceptor {
+    private val activeCount = AtomicInteger(0)
+
+    override fun beforeExecute(context: JobExecutionContext): Boolean {
+        while (true) {
+            val current = activeCount.get()
+            if (current >= maxConcurrent) return false
+            if (activeCount.compareAndSet(current, current + 1)) return true
+        }
+    }
+
+    override fun afterExecute(context: JobExecutionContext, result: JobResult) {
+        activeCount.decrementAndGet()
+    }
+}
+
+/**
  * Represents the priority of a job. Higher values indicate higher priority.
  */
 @JvmInline
