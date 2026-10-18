@@ -33,6 +33,14 @@ class JobExecutionContext(
 }
 
 /**
+ * Interceptor for job execution. Allows running logic before and after the job action.
+ */
+interface JobExecutionInterceptor {
+    fun beforeExecute(context: JobExecutionContext): Boolean // return false to abort execution
+    fun afterExecute(context: JobExecutionContext, result: JobResult)
+}
+
+/**
  * Represents the priority of a job. Higher values indicate higher priority.
  */
 @JvmInline
@@ -203,6 +211,7 @@ class Job(
     private val listeners = CopyOnWriteArrayList<JobEventListener>()
     private val resultListeners = CopyOnWriteArrayList<JobResultListener>()
     private val outcomeListeners = CopyOnWriteArrayList<JobOutcomeListener>()
+    private val interceptors = CopyOnWriteArrayList<JobExecutionInterceptor>()
 
     fun addEventListener(listener: JobEventListener) {
         listeners.add(listener)
@@ -226,6 +235,14 @@ class Job(
 
     fun removeOutcomeListener(listener: JobOutcomeListener) {
         outcomeListeners.remove(listener)
+    }
+
+    fun addInterceptor(interceptor: JobExecutionInterceptor) {
+        interceptors.add(interceptor)
+    }
+
+    fun removeInterceptor(interceptor: JobExecutionInterceptor) {
+        interceptors.remove(interceptor)
     }
 
     private fun notifyListeners(event: JobEvent) {
@@ -306,6 +323,13 @@ class Job(
             
             notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
 
+            // Interceptor: Before execute
+            for (interceptor in interceptors) {
+                if (!interceptor.beforeExecute(context)) {
+                    return JobResult.Skipped // Aborted by interceptor
+                }
+            }
+
             do {
                 attempts++
                 lifecycle.totalAttempts.incrementAndGet()
@@ -372,6 +396,9 @@ class Job(
             } else if (currentResult is JobResult.Failure) {
                 notifyListeners(JobEvent(JobEvent.Type.FAILED, id, executionId, currentResult, duration, (currentResult as JobResult.Failure).exception))
             }
+
+            // Interceptor: After execute
+            interceptors.forEach { it.afterExecute(context, currentResult) }
 
             notifyResultListeners(currentResult)
             notifyOutcomeListeners(currentResult)
