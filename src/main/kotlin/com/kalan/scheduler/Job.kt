@@ -413,6 +413,11 @@ class Job(
                     interceptor.beforeExecute(context)
                 } catch (t: Throwable) {
                     passedInterceptors.forEach { it.afterExecute(context, JobResult.Failure(t)) }
+                    try {
+                        interceptor.afterExecute(context, JobResult.Failure(t))
+                    } catch (_: Throwable) {
+                        // Ignore cleanup failures from the throwing interceptor.
+                    }
                     throw t
                 }
                 if (!allowed) {
@@ -440,8 +445,12 @@ class Job(
                             throw e.cause ?: e
                         }
                     } else if (customExecutor != null) {
-                        val resultFuture = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
-                        resultFuture.join()
+                        val future = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
+                        try {
+                            future.join()
+                        } catch (e: java.util.concurrent.CompletionException) {
+                            throw e.cause ?: e
+                        }
                     } else {
                         action(context)
                     }
@@ -588,7 +597,8 @@ class Job(
     }
 
     override fun compareTo(other: Job): Int {
-        return other.priority.compareTo(this.priority) // Higher priority first
+        val priorityCompare = other.priority.compareTo(this.priority) // Higher priority first
+        return if (priorityCompare != 0) priorityCompare else id.compareTo(other.id)
     }
 }
 
