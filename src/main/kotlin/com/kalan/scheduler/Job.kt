@@ -71,6 +71,27 @@ class JobThrottlingInterceptor(private val throttler: JobThrottler) : JobExecuti
 }
 
 /**
+ * Interceptor for logging job execution lifecycle.
+ */
+class LoggingInterceptor : JobExecutionInterceptor {
+    private val logger = java.util.logging.Logger.getLogger(LoggingInterceptor::class.java.name)
+
+    override fun beforeExecute(context: JobExecutionContext): Boolean {
+        logger.info("Executing job ${context.jobId} (Execution ID: ${context.executionId})")
+        return true
+    }
+
+    override fun afterExecute(context: JobExecutionContext, result: JobResult) {
+        val status = when (result) {
+            is JobResult.Success -> "SUCCESS"
+            is JobResult.Failure -> "FAILED (${result.exception.message})"
+            else -> result.javaClass.simpleName
+        }
+        logger.info("Job ${context.jobId} finished with status: $status")
+    }
+}
+
+/**
  * Implements a Token Bucket algorithm to limit the rate of job executions.
  */
 class JobThrottler(private val maxTokens: Double, private val refillRatePerSecond: Double) {
@@ -295,6 +316,10 @@ class Job(
 
     fun addInterceptor(interceptor: JobExecutionInterceptor) {
         interceptors.add(interceptor)
+    }
+
+    fun addInterceptors(vararg interceptorsToAdd: JobExecutionInterceptor) {
+        interceptors.addAll(interceptorsToAdd)
     }
 
     fun removeInterceptor(interceptor: JobExecutionInterceptor) {
