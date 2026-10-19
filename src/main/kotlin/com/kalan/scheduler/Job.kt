@@ -354,7 +354,8 @@ class Job(
     fun isCompleted(): Boolean = lifecycle.completed.get()
 
     fun incrementFailure() {
-        lifecycle.failureCount.incrementAndGet()
+        // Failure counts are recorded by JobLifecycleManager.recordAttempt().
+        // This only moves the job to its terminal failed status.
         lifecycle.updateStatus(JobExecutionStatus.FAILED)
     }
 
@@ -412,7 +413,13 @@ class Job(
                 val allowed = try {
                     interceptor.beforeExecute(context)
                 } catch (t: Throwable) {
-                    passedInterceptors.forEach { it.afterExecute(context, JobResult.Failure(t)) }
+                    passedInterceptors.forEach { ip ->
+                        try {
+                            ip.afterExecute(context, JobResult.Failure(t))
+                        } catch (_: Throwable) {
+                            // Ignore cleanup failures from previously passed interceptors.
+                        }
+                    }
                     try {
                         interceptor.afterExecute(context, JobResult.Failure(t))
                     } catch (_: Throwable) {
@@ -422,7 +429,13 @@ class Job(
                 }
                 if (!allowed) {
                     val abortedResult = JobResult.Skipped
-                    passedInterceptors.forEach { it.afterExecute(context, abortedResult) }
+                    passedInterceptors.forEach { ip ->
+                        try {
+                            ip.afterExecute(context, abortedResult)
+                        } catch (_: Throwable) {
+                            // Ignore cleanup failures while aborting.
+                        }
+                    }
                     return abortedResult
                 }
                 passedInterceptors.add(interceptor)
@@ -430,7 +443,6 @@ class Job(
 
             do {
                 attempts++
-                lifecycle.totalAttempts.incrementAndGet()
                 
                 val attemptStart = Instant.now()
                 currentResult = try {
@@ -500,7 +512,13 @@ class Job(
             }
 
             // Interceptor: After execute
-            passedInterceptors.forEach { it.afterExecute(context, currentResult) }
+            passedInterceptors.forEach { ip ->
+                try {
+                    ip.afterExecute(context, currentResult)
+                } catch (_: Throwable) {
+                    // Ignore cleanup failures from an interceptor.
+                }
+            }
 
             notifyResultListeners(currentResult)
             notifyOutcomeListeners(currentResult)
