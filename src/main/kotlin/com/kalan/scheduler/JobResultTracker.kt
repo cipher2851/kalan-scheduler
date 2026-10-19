@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class JobResultTracker : JobResultListener {
     private val successCounts = ConcurrentHashMap<String, AtomicInteger>()
-    private val failureCounts = ConcurrentHashMap<String, AtomicInteger>
+    private val failureCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val lastResults = ConcurrentHashMap<String, JobResult>()
 
     override fun onResult(jobId: String, result: JobResult) {

@@ -391,6 +391,9 @@ class Job(
             }
         }
 
+        val activeInterceptors = interceptors.toList()
+        val passedInterceptors = mutableListOf<JobExecutionInterceptor>()
+
         var currentResult: JobResult
         var attempts = 0
         val maxAttempts = (retryPolicy?.maxRetries ?: 0) + 1
@@ -405,10 +408,19 @@ class Job(
             notifyListeners(JobEvent(JobEvent.Type.STARTED, id, executionId))
 
             // Interceptor: Before execute
-            for (interceptor in interceptors) {
-                if (!interceptor.beforeExecute(context)) {
-                    return JobResult.Skipped // Aborted by interceptor
+            for (interceptor in activeInterceptors) {
+                val allowed = try {
+                    interceptor.beforeExecute(context)
+                } catch (t: Throwable) {
+                    passedInterceptors.forEach { it.afterExecute(context, JobResult.Failure(t)) }
+                    throw t
                 }
+                if (!allowed) {
+                    val abortedResult = JobResult.Skipped
+                    passedInterceptors.forEach { it.afterExecute(context, abortedResult) }
+                    return abortedResult
+                }
+                passedInterceptors.add(interceptor)
             }
 
             do {
@@ -479,7 +491,7 @@ class Job(
             }
 
             // Interceptor: After execute
-            interceptors.forEach { it.afterExecute(context, currentResult) }
+            passedInterceptors.forEach { it.afterExecute(context, currentResult) }
 
             notifyResultListeners(currentResult)
             notifyOutcomeListeners(currentResult)
