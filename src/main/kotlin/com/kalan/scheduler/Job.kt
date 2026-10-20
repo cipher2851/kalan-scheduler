@@ -492,7 +492,7 @@ class Job(
                         Thread.sleep(delay)
                     } catch (ie: InterruptedException) {
                         Thread.currentThread().interrupt()
-                        currentResult = JobResult.Failure(ie)
+                        // Preserve the original action failure instead of replacing it.
                         break
                     }
                 }

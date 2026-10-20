@@ -45,6 +45,7 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
     }
 
     private fun persist() {
+        storageFile.parentFile?.mkdirs()
         val content = cache.values.joinToString("\n") {
             "${it.id}|${it.priority.value}|${it.tags.joinToString(",")}"
         }
@@ -61,9 +62,11 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
 
     /**
      * Restores persisted job metadata using the supplied factory. Jobs whose
-     * persisted records are malformed are skipped.
+     * persisted records are malformed are skipped. Any jobs previously held in
+     * memory but absent from the persisted file are removed.
      */
     fun load(factory: JobFactory) {
+        cache.clear()
         if (!storageFile.exists()) return
         storageFile.readLines().filter { it.isNotBlank() }.forEach { line ->
             val parts = line.split("|")
