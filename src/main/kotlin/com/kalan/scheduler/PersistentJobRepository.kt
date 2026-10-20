@@ -43,6 +43,7 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
     }
 
     private fun persist() {
+        storageFile.parentFile?.mkdirs()
         val content = jobs.values.joinToString("\n") {
             "${it.id}|${it.priority.value}|${it.tags.joinToString(",")}"
         }
@@ -50,12 +51,13 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
     }
 
     fun load(factory: JobFactory) {
+        jobs.clear()
         if (!storageFile.exists()) return
-        storageFile.readLines().filter { it.isNotBlank() }.forEach {
-            val parts = it.split("|")
+        storageFile.readLines().filter { it.isNotBlank() }.forEach { line ->
+            val parts = line.trim().split("|")
             if (parts.size >= 3) {
                 val id = parts[0]
-                val priority = parts[1].toIntOrNull() ?: 10
+                val priority = parts[1].toIntOrNull() ?: JobPriority.NORMAL.value
                 val tags = if (parts[2].isEmpty()) emptySet() else parts[2].split(",").toSet()
                 jobs[id] = factory.createJob(id, priority, tags)
             }

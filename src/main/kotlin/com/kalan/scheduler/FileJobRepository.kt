@@ -69,7 +69,7 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
         cache.clear()
         if (!storageFile.exists()) return
         storageFile.readLines().filter { it.isNotBlank() }.forEach { line ->
-            val parts = line.split("|")
+            val parts = line.trim().split("|")
             if (parts.size >= 3) {
                 val id = parts[0]
                 val priority = parts[1].toIntOrNull() ?: JobPriority.NORMAL.value
