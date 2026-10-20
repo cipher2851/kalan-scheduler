@@ -223,9 +223,9 @@ class JobLifecycleManager {
             recentOutcomes.removeLast()
         }
 
+        executionCount.incrementAndGet()
         if (success) {
             successCount.incrementAndGet()
-            executionCount.incrementAndGet()
             lastExecutionTime.set(Instant.now())
         } else {
             failureCount.incrementAndGet()
@@ -447,7 +447,8 @@ class Job(
                 val attemptStart = Instant.now()
                 currentResult = try {
                     val res = if (timeoutMs != null) {
-                        val timeoutFuture = CompletableFuture.supplyAsync({ action(context) }, customExecutor)
+                        val executor = customExecutor ?: java.util.concurrent.ForkJoinPool.commonPool()
+                        val timeoutFuture = CompletableFuture.supplyAsync({ action(context) }, executor)
                         try {
                             timeoutFuture.get(timeoutMs!!, TimeUnit.MILLISECONDS)
                         } catch (e: TimeoutException) {
