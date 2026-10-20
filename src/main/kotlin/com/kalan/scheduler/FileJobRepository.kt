@@ -5,9 +5,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.time.Instant
 
 /**
- * A simple File-based repository. 
- * Note: In a real-world scenario, this would use a JSON library like Jackson or kotlinx.serialization.
- * For this lightweight implementation, we store basic job metadata as properties.
+ * A file-based repository.
+ *
+ * Job actions are lambdas and cannot be serialized directly, so this repository
+ * persists the job metadata that can be reconstructed by a [JobFactory]. The
+ * persisted format is `id|priority|tag1,tag2,...`.
  */
 class FileJobRepository(private val storageFile: File) : JobRepository {
     private val cache = ConcurrentHashMap<String, Job>()
@@ -43,15 +45,34 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
     }
 
     private fun persist() {
-        // Minimalist persistence: only IDs and basic config are stored here
-        // In a full impl, we would serialize the Job objects to JSON
-        storageFile.writeText(cache.keys.joinToString("\n"))
+        val content = cache.values.joinToString("\n") {
+            "${it.id}|${it.priority.value}|${it.tags.joinToString(",")}"
+        }
+        storageFile.writeText(content)
     }
 
+    /**
+     * Backwards-compatible no-op. Job actions cannot be reconstructed without a
+     * factory, so callers that need recovery should use [load] with a factory.
+     */
     fun load() {
+        // Retained for compatibility with earlier versions of this repository.
+    }
+
+    /**
+     * Restores persisted job metadata using the supplied factory. Jobs whose
+     * persisted records are malformed are skipped.
+     */
+    fun load(factory: JobFactory) {
         if (!storageFile.exists()) return
-        val ids = storageFile.readText().lines().filter { it.isNotBlank() }
-        // Note: Actual Job actions cannot be persisted to disk as they are lambdas.
-        // A real persistence layer would require Jobs to be defined by class names/factories.
+        storageFile.readLines().filter { it.isNotBlank() }.forEach { line ->
+            val parts = line.split("|")
+            if (parts.size >= 3) {
+                val id = parts[0]
+                val priority = parts[1].toIntOrNull() ?: JobPriority.NORMAL.value
+                val tags = if (parts[2].isEmpty()) emptySet() else parts[2].split(",").toSet()
+                cache[id] = factory.createJob(id, priority, tags)
+            }
+        }
     }
 }
