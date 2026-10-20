@@ -99,7 +99,10 @@ class InMemoryJobRepository : JobRepository {
  */
 class SortedJobRepository : JobRepository {
     private val idMap = ConcurrentHashMap<String, Job>()
-    private val sortedJobs = ConcurrentSkipListSet<Job>()
+    private val sortedJobs = ConcurrentSkipListSet<Job>(
+        java.util.Comparator.comparingInt<Job> { it.priority.value }.reversed()
+            .thenComparing(java.util.Comparator.comparing { it.id })
+    )
 
     override fun save(job: Job) {
         remove(job.id)

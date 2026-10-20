@@ -11,7 +11,8 @@ import java.util.logging.Logger
 class JobBatch(
     val batchId: String,
     val jobIds: List<String>,
-    val stopOnFailure: Boolean = true
+    val stopOnFailure: Boolean = true,
+    val timeoutMs: Long = 10000
 ) {
     private val logger = Logger.getLogger(JobBatch::class.java.name)
 
@@ -21,8 +22,8 @@ class JobBatch(
      */
     fun execute(scheduler: KalanScheduler): CompletableFuture<BatchResult> {
         val resultFuture = CompletableFuture<BatchResult>()
-        val executedJobs = mutableListOf<String>()
-        val failures = mutableListOf<BatchFailure>()
+        val executedJobs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val failures = java.util.concurrent.CopyOnWriteArrayList<BatchFailure>()
         val currentJobIndex = AtomicInteger(0)
 
         fun runNextJob() {
@@ -30,21 +31,31 @@ class JobBatch(
             if (index >= jobIds.size) {
                 resultFuture.complete(BatchResult(
                     batchId = batchId,
-                    successfulJobs = executedJobs,
-                    failures = failures,
+                    successfulJobs = executedJobs.toList(),
+                    failures = failures.toList(),
                     isSuccessful = failures.isEmpty()
                 ))
                 return
             }
 
             val jobId = jobIds[index]
-            scheduler.executeNow(jobId)
-            
+            try {
+                scheduler.executeNow(jobId)
+            } catch (e: Exception) {
+                failures.add(BatchFailure(jobId, e))
+                if (stopOnFailure) {
+                    resultFuture.complete(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
+                    return
+                }
+                runNextJob()
+                return
+            }
+
             val job = scheduler.getJobInfo(jobId)
             if (job == null) {
                 failures.add(BatchFailure(jobId, RuntimeException("Job not found in scheduler")))
                 if (stopOnFailure) {
-                    resultFuture.complete(BatchResult(batchId, executedJobs, failures, false))
+                    resultFuture.complete(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
                     return
                 }
                 runNextJob()
@@ -53,10 +64,10 @@ class JobBatch(
 
             CompletableFuture.runAsync {
                 try {
-                    var timeout = 0L
-                    while (scheduler.getJobStatus(jobId) == JobStatus.RUNNING && timeout < 10000) {
+                    var waited = 0L
+                    while (scheduler.getJobStatus(jobId) == JobStatus.RUNNING && waited < timeoutMs) {
                         Thread.sleep(50)
-                        timeout += 50
+                        waited += 50
                     }
 
                     if (scheduler.getJobStatus(jobId) == JobStatus.COMPLETED) {
@@ -66,7 +77,7 @@ class JobBatch(
                         val ex = RuntimeException("Job $jobId failed or timed out")
                         failures.add(BatchFailure(jobId, ex))
                         if (stopOnFailure) {
-                            resultFuture.complete(BatchResult(batchId, executedJobs, failures, false))
+                            resultFuture.complete(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
                         } else {
                             runNextJob()
                         }
@@ -74,7 +85,7 @@ class JobBatch(
                 } catch (e: Exception) {
                     failures.add(BatchFailure(jobId, e))
                     if (stopOnFailure) {
-                        resultFuture.complete(BatchResult(batchId, executedJobs, failures, false))
+                        resultFuture.complete(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
                     } else {
                         runNextJob()
                     }

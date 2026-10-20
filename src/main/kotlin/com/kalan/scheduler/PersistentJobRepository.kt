@@ -44,6 +44,10 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
 
     private fun persist() {
         storageFile.parentFile?.mkdirs()
+        if (jobs.isEmpty()) {
+            if (storageFile.exists()) storageFile.delete()
+            return
+        }
         val content = jobs.values.joinToString("\n") {
             "${it.id}|${it.priority.value}|${it.tags.joinToString(",")}"
         }
@@ -51,16 +55,31 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
     }
 
     fun load(factory: JobFactory) {
-        jobs.clear()
-        if (!storageFile.exists()) return
-        storageFile.readLines().filter { it.isNotBlank() }.forEach { line ->
+        if (!storageFile.exists()) {
+            jobs.clear()
+            return
+        }
+        val lines = try {
+            storageFile.readLines()
+        } catch (e: Exception) {
+            return
+        }
+        val loaded = LinkedHashMap<String, Job>()
+        lines.filter { it.isNotBlank() }.forEach { line ->
             val parts = line.trim().split("|")
             if (parts.size >= 3) {
-                val id = parts[0]
-                val priority = parts[1].toIntOrNull() ?: JobPriority.NORMAL.value
-                val tags = if (parts[2].isEmpty()) emptySet() else parts[2].split(",").toSet()
-                jobs[id] = factory.createJob(id, priority, tags)
+                val id = parts[0].trim()
+                if (id.isEmpty()) return@forEach
+                val priority = parts[1].trim().toIntOrNull() ?: JobPriority.NORMAL.value
+                val tags = if (parts[2].trim().isEmpty()) emptySet() else parts[2].trim().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                try {
+                    loaded[id] = factory.createJob(id, priority, tags)
+                } catch (e: Exception) {
+                    // Skip jobs that cannot be reconstructed.
+                }
             }
         }
+        jobs.clear()
+        jobs.putAll(loaded)
     }
 }
