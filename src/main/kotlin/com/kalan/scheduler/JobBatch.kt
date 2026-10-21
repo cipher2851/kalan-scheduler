@@ -35,6 +35,14 @@ class JobBatch(
             }
         }
 
+        fun computeDeadline(): Long {
+            val now = System.currentTimeMillis()
+            if (safeTimeoutMs == Long.MAX_VALUE || now > Long.MAX_VALUE - safeTimeoutMs) {
+                return Long.MAX_VALUE
+            }
+            return now + safeTimeoutMs
+        }
+
         fun runNextJob() {
             if (completed.get()) return
             val index = currentJobIndex.getAndIncrement()
@@ -75,13 +83,24 @@ class JobBatch(
             }
 
             CompletableFuture.runAsync {
+                if (completed.get()) return@runAsync
                 try {
-                    val deadline = System.currentTimeMillis() + safeTimeoutMs
-                    while (scheduler.getJobStatus(jobId) == JobStatus.RUNNING &&
+                    val deadline = computeDeadline()
+                    var interrupted = false
+                    while (!completed.get() &&
+                        scheduler.getJobStatus(jobId) == JobStatus.RUNNING &&
                         System.currentTimeMillis() < deadline
                     ) {
-                        Thread.sleep(50)
+                        try {
+                            Thread.sleep(50)
+                        } catch (ie: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            interrupted = true
+                            break
+                        }
                     }
+
+                    if (completed.get()) return@runAsync
 
                     val status = try {
                         scheduler.getJobStatus(jobId)
@@ -93,8 +112,21 @@ class JobBatch(
                         executedJobs.add(jobId)
                         runNextJob()
                     } else {
-                        val ex = RuntimeException("Job $jobId failed or timed out (status=$status)")
-                        failures.add(BatchFailure(jobId, ex))
+                        if (status == JobStatus.RUNNING) {
+                            try {
+                                scheduler.cancel(jobId)
+                            } catch (e: Exception) {
+                                logger.warning("Failed to cancel timed out job $jobId: ${e.message}")
+                            }
+                        }
+                        val reason = if (interrupted) {
+                            "Job $jobId interrupted while waiting for completion"
+                        } else if (status == JobStatus.RUNNING) {
+                            "Job $jobId timed out (status=$status)"
+                        } else {
+                            "Job $jobId failed or timed out (status=$status)"
+                        }
+                        failures.add(BatchFailure(jobId, RuntimeException(reason)))
                         if (stopOnFailure) {
                             finish(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
                         } else {
@@ -102,6 +134,7 @@ class JobBatch(
                         }
                     }
                 } catch (e: Exception) {
+                    if (completed.get()) return@runAsync
                     failures.add(BatchFailure(jobId, e))
                     if (stopOnFailure) {
                         finish(BatchResult(batchId, executedJobs.toList(), failures.toList(), false))
