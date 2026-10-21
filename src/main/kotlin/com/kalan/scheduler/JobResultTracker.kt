@@ -31,6 +31,31 @@ class JobResultTracker : JobResultListener {
         return getFailureCount(jobId) < failureThreshold
     }
 
+    fun getSuccessRate(jobId: String): Double {
+        val successes = getSuccessCount(jobId)
+        val failures = getFailureCount(jobId)
+        val total = successes + failures
+        return if (total == 0) 0.0 else successes.toDouble() / total
+    }
+
+    fun getTotalSuccessCount(): Int = successCounts.values.sumOf { it.get() }
+
+    fun getTotalFailureCount(): Int = failureCounts.values.sumOf { it.get() }
+
+    fun getTotalExecutionCount(): Int = getTotalSuccessCount() + getTotalFailureCount()
+
+    fun getOverallFailureRate(): Double {
+        val total = getTotalExecutionCount()
+        return if (total == 0) 0.0 else getTotalFailureCount().toDouble() / total
+    }
+
+    fun getTrackedJobIds(): Set<String> =
+        (successCounts.keys + failureCounts.keys + lastResults.keys).toSet()
+
+    fun getUnhealthyJobs(failureThreshold: Int = 3): List<String> {
+        return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }
+    }
+
     fun clear(jobId: String) {
         successCounts.remove(jobId)
         failureCounts.remove(jobId)
