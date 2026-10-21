@@ -1,6 +1,7 @@
 package com.kalan.scheduler
 
 import java.io.File
+import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.time.Instant
 
@@ -9,22 +10,23 @@ import java.time.Instant
  *
  * Job actions are lambdas and cannot be serialized directly, so this repository
  * persists the job metadata that can be reconstructed by a [JobFactory]. The
- * persisted format is `id|priority|tag1,tag2,...`.
+ * persisted format is `id|priority|tag1,tag2,...|metaKey=metaValue,...`.
  */
 class FileJobRepository(private val storageFile: File) : JobRepository {
     private val cache = ConcurrentHashMap<String, Job>()
+    private val lock = Any()
 
-    override fun save(job: Job) {
+    override fun save(job: Job) = synchronized(lock) {
         cache[job.id] = job
         persist()
     }
 
     override fun findById(id: String): Job? = cache[id]
 
-    override fun remove(id: String): Job? {
+    override fun remove(id: String): Job? = synchronized(lock) {
         val job = cache.remove(id)
         persist()
-        return job
+        job
     }
 
     override fun findAll(): Collection<Job> = cache.values
@@ -39,7 +41,7 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
 
     override fun findByPriorityRange(min: JobPriority, max: JobPriority): List<Job> = cache.values.filter { it.priority in min..max }
 
-    override fun clear() {
+    override fun clear() = synchronized(lock) {
         cache.clear()
         if (storageFile.exists()) storageFile.delete()
     }
@@ -50,8 +52,10 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
             if (storageFile.exists()) storageFile.delete()
             return
         }
-        val content = cache.values.joinToString("\n") {
-            "${it.id}|${it.priority.value}|${it.tags.joinToString(",")}"
+        val content = cache.values.joinToString("\n") { job ->
+            val tags = job.tags.joinToString(",")
+            val metadata = job.metadata.entries.joinToString(",") { "${it.key}=${it.value}" }
+            "${job.id}|${job.priority.value}|$tags|$metadata"
         }
         storageFile.writeText(content)
     }
@@ -70,7 +74,7 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
      * memory but absent from the persisted file are removed. If the file cannot
      * be read, the existing in-memory state is left untouched.
      */
-    fun load(factory: JobFactory) {
+    fun load(factory: JobFactory) = synchronized(lock) {
         if (!storageFile.exists()) {
             cache.clear()
             return
@@ -87,13 +91,14 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
                 val id = parts[0].trim()
                 if (id.isEmpty()) return@forEach
                 val priority = parts[1].trim().toIntOrNull() ?: JobPriority.NORMAL.value
-                val tags = if (parts[2].trim().isEmpty()) {
-                    emptySet()
-                } else {
-                    parts[2].trim().split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-                }
+                val tags = parseTags(parts[2].trim())
                 try {
-                    loaded[id] = factory.createJob(id, priority, tags)
+                    val job = factory.createJob(id, priority, tags)
+                    if (parts.size >= 4) {
+                        val metadata = parseMetadata(parts[3].trim())
+                        (job.metadata as? MutableMap<String, Any>)?.putAll(metadata)
+                    }
+                    loaded[id] = job
                 } catch (e: Exception) {
                     // Skip jobs that cannot be reconstructed.
                 }
@@ -101,5 +106,23 @@ class FileJobRepository(private val storageFile: File) : JobRepository {
         }
         cache.clear()
         cache.putAll(loaded)
+    }
+
+    private fun parseTags(raw: String): Set<String> {
+        return if (raw.isEmpty()) emptySet() else raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    private fun parseMetadata(raw: String): Map<String, String> {
+        if (raw.isEmpty()) return emptyMap()
+        val result = LinkedHashMap<String, String>()
+        raw.split(",").forEach { entry ->
+            val separator = entry.indexOf('=')
+            if (separator >= 0) {
+                val key = entry.substring(0, separator).trim()
+                val value = entry.substring(separator + 1).trim()
+                if (key.isNotEmpty()) result[key] = value
+            }
+        }
+        return result
     }
 }

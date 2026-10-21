@@ -20,16 +20,17 @@ class JobDependencyManager(
         val job = scheduler.getJobInfo(jobId) ?: return false
         val dependsOn = job.dependsOn ?: return true
 
-        // A job is ready if its dependency has completed successfully
-        return isDependencySatisfied(dependsOn)
+        // A job is ready only when its (transitive) dependency chain has completed.
+        return isDependencySatisfied(dependsOn, mutableSetOf())
     }
 
-    private fun isDependencySatisfied(dependencyId: String): Boolean {
+    private fun isDependencySatisfied(dependencyId: String, visited: MutableSet<String>): Boolean {
+        if (!visited.add(dependencyId)) return false
         val depJob = scheduler.getJobInfo(dependencyId) ?: return false
-        
-        // We consider a dependency satisfied if it's COMPLETED. 
-        // In a more complex system, we might allow satisfied on certain failures.
-        return depJob.status == JobStatus.COMPLETED
+        if (depJob.status != JobStatus.COMPLETED) return false
+
+        val nextDependency = depJob.dependsOn
+        return nextDependency == null || isDependencySatisfied(nextDependency, visited)
     }
 
     /**

@@ -18,39 +18,22 @@ class JobDependencyGraph {
         adj.values.forEach { it.remove(jobId) }
     }
 
+    /**
+     * Returns true if adding an edge `jobId -> dependsOnId` would create a cycle.
+     */
     fun wouldCreateCycle(jobId: String, dependsOnId: String): Boolean {
-        val visited = mutableSetOf<String>()
-        val stack = mutableSetOf<String>()
-
-        fun hasCycle(u: String): Boolean {
-            visited.add(u)
-            stack.add(u)
-
-            val neighbors = adj[u] ?: emptySet<String>()
-            for (v in neighbors) {
-                if (v == jobId) return true
-                if (v !in visited) {
-                    if (hasCycle(v)) return true
-                }
-            }
-
-            stack.remove(u)
-            return false
-        }
-
-        // Check if adding (jobId -> dependsOnId) creates a cycle
-        // We simulate the edge by starting a DFS from dependsOnId to see if we can reach jobId
+        if (jobId == dependsOnId) return true
+        // Simulate the proposed edge by checking whether dependsOnId can already
+        // reach jobId in the existing graph.
         return canReach(dependsOnId, jobId, mutableSetOf())
     }
 
     private fun canReach(start: String, target: String, visited: MutableSet<String>): Boolean {
         if (start == target) return true
-        visited.add(start)
+        if (!visited.add(start)) return false
         val neighbors = adj[start] ?: emptySet<String>()
         for (neighbor in neighbors) {
-            if (neighbor !in visited) {
-                if (canReach(neighbor, target, visited)) return true
-            }
+            if (canReach(neighbor, target, visited)) return true
         }
         return false
     }
