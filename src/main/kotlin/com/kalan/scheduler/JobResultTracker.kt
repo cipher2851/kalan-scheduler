@@ -11,11 +11,15 @@ class JobResultTracker : JobResultListener {
     private val successCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val failureCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val lastResults = ConcurrentHashMap<String, JobResult>()
-    private val resultTypeCounts = ConcurrentHashMap<Class<out JobResult>, AtomicInteger>()
+    private val resultTypeCountsByJob = ConcurrentHashMap<String, ConcurrentHashMap<Class<out JobResult>, AtomicInteger>>()
 
     override fun onResult(jobId: String, result: JobResult) {
         lastResults[jobId] = result
-        resultTypeCounts.computeIfAbsent(result::class.java) { AtomicInteger(0) }.incrementAndGet()
+        val resultType = result::class.java
+        resultTypeCountsByJob
+            .computeIfAbsent(jobId) { ConcurrentHashMap() }
+            .computeIfAbsent(resultType) { AtomicInteger(0) }
+            .incrementAndGet()
         if (result is JobResult.Success) {
             successCounts.computeIfAbsent(jobId) { AtomicInteger(0) }.incrementAndGet()
         } else if (result is JobResult.Failure) {
@@ -52,7 +56,7 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getTrackedJobIds(): Set<String> =
-        (successCounts.keys + failureCounts.keys + lastResults.keys).toSet()
+        (successCounts.keys + failureCounts.keys + lastResults.keys + resultTypeCountsByJob.keys).toSet()
 
     fun getUnhealthyJobs(failureThreshold: Int = 3): List<String> {
         return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }
@@ -62,13 +66,14 @@ class JobResultTracker : JobResultListener {
         successCounts.remove(jobId)
         failureCounts.remove(jobId)
         lastResults.remove(jobId)
+        resultTypeCountsByJob.remove(jobId)
     }
 
     fun clearAll() {
         successCounts.clear()
         failureCounts.clear()
         lastResults.clear()
-        resultTypeCounts.clear()
+        resultTypeCountsByJob.clear()
     }
 
     fun getSummary(jobId: String): Map<String, Any> {
@@ -84,18 +89,25 @@ class JobResultTracker : JobResultListener {
      * Returns the number of recorded results whose runtime type is [resultClass].
      */
     fun getResultTypeCount(resultClass: Class<out JobResult>): Int =
-        resultTypeCounts[resultClass]?.get() ?: 0
+        resultTypeCountsByJob.values.sumOf { counts -> counts[resultClass]?.get() ?: 0 }
 
     /**
      * Returns an immutable snapshot of recorded result counts keyed by result type.
      */
-    fun getResultTypeCounts(): Map<Class<out JobResult>, Int> =
-        resultTypeCounts.mapValues { it.value.get() }
+    fun getResultTypeCounts(): Map<Class<out JobResult>, Int> {
+        val aggregated = mutableMapOf<Class<out JobResult>, Int>()
+        resultTypeCountsByJob.values.forEach { counts ->
+            counts.forEach { (resultType, count) ->
+                aggregated[resultType] = (aggregated[resultType] ?: 0) + count.get()
+            }
+        }
+        return aggregated
+    }
 
     /**
      * Returns the most frequently recorded result type, or null when no results
      * have been recorded yet.
      */
     fun getMostCommonResultType(): Class<out JobResult>? =
-        resultTypeCounts.maxByOrNull { it.value.get() }?.key
+        getResultTypeCounts().maxByOrNull { it.value }?.key
 }

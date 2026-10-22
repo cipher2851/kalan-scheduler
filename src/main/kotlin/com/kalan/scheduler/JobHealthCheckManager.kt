@@ -28,16 +28,26 @@ class JobHealthCheckManager(
 
     fun start() {
         if (isRunning.getAndSet(true)) return
-        
-        scheduler.scheduleAtFixedRate("kalan-internal-health-check", 0, checkIntervalMs) {
-            checkAllJobsHealth()
-            null
+
+        try {
+            scheduler.scheduleAtFixedRate("kalan-internal-health-check", 0, checkIntervalMs) {
+                checkAllJobsHealth()
+                null
+            }
+        } catch (e: Exception) {
+            isRunning.set(false)
+            throw e
         }
     }
 
     fun stop() {
-        scheduler.cancel("kalan-internal-health-check")
-        isRunning.set(false)
+        if (!isRunning.getAndSet(false)) return
+
+        try {
+            scheduler.cancel("kalan-internal-health-check")
+        } catch (e: Exception) {
+            logger.warning("Failed to cancel health check job: ${e.message}")
+        }
         unhealthyJobs.clear()
     }
 
