@@ -11,9 +11,11 @@ class JobResultTracker : JobResultListener {
     private val successCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val failureCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val lastResults = ConcurrentHashMap<String, JobResult>()
+    private val resultTypeCounts = ConcurrentHashMap<Class<out JobResult>, AtomicInteger>()
 
     override fun onResult(jobId: String, result: JobResult) {
         lastResults[jobId] = result
+        resultTypeCounts.computeIfAbsent(result::class.java) { AtomicInteger(0) }.incrementAndGet()
         if (result is JobResult.Success) {
             successCounts.computeIfAbsent(jobId) { AtomicInteger(0) }.incrementAndGet()
         } else if (result is JobResult.Failure) {
@@ -22,7 +24,7 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getSuccessCount(jobId: String): Int = successCounts[jobId]?.get() ?: 0
-    
+
     fun getFailureCount(jobId: String): Int = failureCounts[jobId]?.get() ?: 0
 
     fun getLastResult(jobId: String): JobResult? = lastResults[jobId]
@@ -66,6 +68,7 @@ class JobResultTracker : JobResultListener {
         successCounts.clear()
         failureCounts.clear()
         lastResults.clear()
+        resultTypeCounts.clear()
     }
 
     fun getSummary(jobId: String): Map<String, Any> {
@@ -76,4 +79,23 @@ class JobResultTracker : JobResultListener {
             "lastResult" to (getLastResult(jobId) ?: "NONE")
         )
     }
+
+    /**
+     * Returns the number of recorded results whose runtime type is [resultClass].
+     */
+    fun getResultTypeCount(resultClass: Class<out JobResult>): Int =
+        resultTypeCounts[resultClass]?.get() ?: 0
+
+    /**
+     * Returns an immutable snapshot of recorded result counts keyed by result type.
+     */
+    fun getResultTypeCounts(): Map<Class<out JobResult>, Int> =
+        resultTypeCounts.mapValues { it.value.get() }
+
+    /**
+     * Returns the most frequently recorded result type, or null when no results
+     * have been recorded yet.
+     */
+    fun getMostCommonResultType(): Class<out JobResult>? =
+        resultTypeCounts.maxByOrNull { it.value.get() }?.key
 }
