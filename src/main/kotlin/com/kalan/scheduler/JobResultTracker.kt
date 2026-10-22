@@ -48,7 +48,8 @@ class JobResultTracker : JobResultListener {
 
     fun getTotalFailureCount(): Int = failureCounts.values.sumOf { it.get() }
 
-    fun getTotalExecutionCount(): Int = getTotalSuccessCount() + getTotalFailureCount()
+    fun getTotalExecutionCount(): Int =
+        resultTypeCountsByJob.values.sumOf { counts -> counts.values.sumOf { it.get() } }
 
     fun getOverallFailureRate(): Double {
         val total = getTotalExecutionCount()
@@ -86,10 +87,13 @@ class JobResultTracker : JobResultListener {
     }
 
     /**
-     * Returns the number of recorded results whose runtime type is [resultClass].
+     * Returns the number of recorded results whose runtime type is assignable to
+     * [resultClass], including subclasses of the requested result type.
      */
     fun getResultTypeCount(resultClass: Class<out JobResult>): Int =
-        resultTypeCountsByJob.values.sumOf { counts -> counts[resultClass]?.get() ?: 0 }
+        resultTypeCountsByJob.values.sumOf { counts ->
+            counts.filterKeys { resultClass.isAssignableFrom(it) }.values.sumOf { it.get() }
+        }
 
     /**
      * Returns an immutable snapshot of recorded result counts keyed by result type.
