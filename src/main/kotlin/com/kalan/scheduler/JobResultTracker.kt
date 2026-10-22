@@ -8,8 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * This is useful for monitoring the overall health of a job group or a batch.
  */
 class JobResultTracker : JobResultListener {
-    private val successCounts = ConcurrentHashMap<String, AtomicInteger>()
-    private val failureCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val lastResults = ConcurrentHashMap<String, JobResult>()
     private val resultTypeCountsByJob = ConcurrentHashMap<String, ConcurrentHashMap<Class<out JobResult>, AtomicInteger>>()
 
@@ -20,16 +18,19 @@ class JobResultTracker : JobResultListener {
             .computeIfAbsent(jobId) { ConcurrentHashMap() }
             .computeIfAbsent(resultType) { AtomicInteger(0) }
             .incrementAndGet()
-        if (result is JobResult.Success) {
-            successCounts.computeIfAbsent(jobId) { AtomicInteger(0) }.incrementAndGet()
-        } else if (result is JobResult.Failure) {
-            failureCounts.computeIfAbsent(jobId) { AtomicInteger(0) }.incrementAndGet()
-        }
     }
 
-    fun getSuccessCount(jobId: String): Int = successCounts[jobId]?.get() ?: 0
+    private fun countResults(jobId: String, resultClass: Class<out JobResult>): Int {
+        return resultTypeCountsByJob[jobId]?.entries?.sumOf { (resultType, count) ->
+            if (resultClass.isAssignableFrom(resultType)) count.get() else 0
+        } ?: 0
+    }
 
-    fun getFailureCount(jobId: String): Int = failureCounts[jobId]?.get() ?: 0
+    fun getSuccessCount(jobId: String): Int =
+        countResults(jobId, JobResult.Success::class.java)
+
+    fun getFailureCount(jobId: String): Int =
+        countResults(jobId, JobResult.Failure::class.java)
 
     fun getLastResult(jobId: String): JobResult? = lastResults[jobId]
 
@@ -44,9 +45,15 @@ class JobResultTracker : JobResultListener {
         return if (total == 0) 0.0 else successes.toDouble() / total
     }
 
-    fun getTotalSuccessCount(): Int = successCounts.values.sumOf { it.get() }
+    fun getTotalSuccessCount(): Int =
+        resultTypeCountsByJob.values.sumOf { counts ->
+            counts.filterKeys { JobResult.Success::class.java.isAssignableFrom(it) }.values.sumOf { it.get() }
+        }
 
-    fun getTotalFailureCount(): Int = failureCounts.values.sumOf { it.get() }
+    fun getTotalFailureCount(): Int =
+        resultTypeCountsByJob.values.sumOf { counts ->
+            counts.filterKeys { JobResult.Failure::class.java.isAssignableFrom(it) }.values.sumOf { it.get() }
+        }
 
     fun getTotalExecutionCount(): Int =
         resultTypeCountsByJob.values.sumOf { counts -> counts.values.sumOf { it.get() } }
@@ -57,22 +64,18 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getTrackedJobIds(): Set<String> =
-        (successCounts.keys + failureCounts.keys + lastResults.keys + resultTypeCountsByJob.keys).toSet()
+        (lastResults.keys + resultTypeCountsByJob.keys).toSet()
 
     fun getUnhealthyJobs(failureThreshold: Int = 3): List<String> {
         return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }
     }
 
     fun clear(jobId: String) {
-        successCounts.remove(jobId)
-        failureCounts.remove(jobId)
         lastResults.remove(jobId)
         resultTypeCountsByJob.remove(jobId)
     }
 
     fun clearAll() {
-        successCounts.clear()
-        failureCounts.clear()
         lastResults.clear()
         resultTypeCountsByJob.clear()
     }
