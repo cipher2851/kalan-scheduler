@@ -64,10 +64,10 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getTrackedJobIds(): Set<String> =
-        (lastResults.keys + resultTypeCountsByJob.keys).toSet()
+        (lastResults.keys + resultTypeCountsByJob.keys).sorted().toSet()
 
     fun getUnhealthyJobs(failureThreshold: Int = 3): List<String> {
-        return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }
+        return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }.sorted()
     }
 
     fun clear(jobId: String) {
@@ -108,13 +108,16 @@ class JobResultTracker : JobResultListener {
                 aggregated[resultType] = (aggregated[resultType] ?: 0) + count.get()
             }
         }
-        return aggregated
+        return java.util.Collections.unmodifiableMap(aggregated)
     }
 
     /**
      * Returns the most frequently recorded result type, or null when no results
-     * have been recorded yet.
+     * have been recorded yet. Ties are broken by the result type name.
      */
     fun getMostCommonResultType(): Class<out JobResult>? =
-        getResultTypeCounts().maxByOrNull { it.value }?.key
+        getResultTypeCounts().entries
+            .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
+            .firstOrNull()
+            ?.key
 }
