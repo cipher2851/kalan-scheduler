@@ -32,6 +32,13 @@ class JobResultTracker : JobResultListener {
     fun getFailureCount(jobId: String): Int =
         countResults(jobId, JobResult.Failure::class.java)
 
+    fun getFailureRate(jobId: String): Double {
+        val successes = getSuccessCount(jobId)
+        val failures = getFailureCount(jobId)
+        val total = successes + failures
+        return if (total == 0) 0.0 else failures.toDouble() / total
+    }
+
     fun getLastResult(jobId: String): JobResult? = lastResults[jobId]
 
     fun isJobHealthy(jobId: String, failureThreshold: Int = 3): Boolean {
