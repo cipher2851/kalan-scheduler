@@ -100,6 +100,8 @@ class JobResultTracker : JobResultListener {
 
     /**
      * Returns an immutable snapshot of recorded result counts keyed by result type.
+     * The snapshot is sorted by result type name so its iteration order remains
+     * deterministic regardless of the underlying concurrent map traversal order.
      */
     fun getResultTypeCounts(): Map<Class<out JobResult>, Int> {
         val aggregated = mutableMapOf<Class<out JobResult>, Int>()
@@ -108,7 +110,9 @@ class JobResultTracker : JobResultListener {
                 aggregated[resultType] = (aggregated[resultType] ?: 0) + count.get()
             }
         }
-        return java.util.Collections.unmodifiableMap(aggregated)
+        val sorted = java.util.TreeMap<Class<out JobResult>, Int>(compareBy { it.name })
+        sorted.putAll(aggregated)
+        return java.util.Collections.unmodifiableMap(sorted)
     }
 
     /**
