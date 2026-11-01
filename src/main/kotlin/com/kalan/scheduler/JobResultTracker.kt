@@ -100,6 +100,22 @@ class JobResultTracker : JobResultListener {
     }
 
     /**
+     * Returns an aggregate summary of all tracked jobs, including the number of
+     * tracked jobs, total executions, success and failure counts, overall failure
+     * rate, and the most frequently recorded result type (or null when empty).
+     */
+    fun getOverallSummary(): Map<String, Any> {
+        return mapOf(
+            "trackedJobs" to getTrackedJobIds().size,
+            "totalExecutions" to getTotalExecutionCount(),
+            "successes" to getTotalSuccessCount(),
+            "failures" to getTotalFailureCount(),
+            "overallFailureRate" to getOverallFailureRate(),
+            "mostCommonResultType" to (getMostCommonResultType()?.name ?: "NONE")
+        )
+    }
+
+    /**
      * Returns the number of recorded results whose runtime type is assignable to
      * [resultClass], including subclasses of the requested result type.
      */
