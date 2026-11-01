@@ -125,6 +125,16 @@ class JobResultTracker : JobResultListener {
         }
 
     /**
+     * Returns the number of recorded results for [jobId] whose runtime type is
+     * assignable to [resultClass], including subclasses of the requested result
+     * type.
+     */
+    fun getResultTypeCount(jobId: String, resultClass: Class<out JobResult>): Int {
+        val counts = resultTypeCountsByJob[jobId] ?: return 0
+        return counts.filterKeys { resultClass.isAssignableFrom(it) }.values.sumOf { it.get() }
+    }
+
+    /**
      * Returns an immutable snapshot of recorded result counts keyed by result type,
      * aggregated across all tracked jobs. The snapshot is sorted by result type name
      * so its iteration order remains deterministic regardless of the underlying
