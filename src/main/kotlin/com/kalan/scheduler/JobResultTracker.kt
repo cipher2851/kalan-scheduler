@@ -71,7 +71,10 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getTrackedJobIds(): Set<String> =
-        (lastResults.keys + resultTypeCountsByJob.keys).sorted().toSet()
+        sortedSetOf<String>().apply {
+            addAll(lastResults.keys)
+            addAll(resultTypeCountsByJob.keys)
+        }
 
     fun getUnhealthyJobs(failureThreshold: Int = 3): List<String> {
         return getTrackedJobIds().filter { getFailureCount(it) >= failureThreshold }.sorted()
@@ -106,9 +109,10 @@ class JobResultTracker : JobResultListener {
         }
 
     /**
-     * Returns an immutable snapshot of recorded result counts keyed by result type.
-     * The snapshot is sorted by result type name so its iteration order remains
-     * deterministic regardless of the underlying concurrent map traversal order.
+     * Returns an immutable snapshot of recorded result counts keyed by result type,
+     * aggregated across all tracked jobs. The snapshot is sorted by result type name
+     * so its iteration order remains deterministic regardless of the underlying
+     * concurrent map traversal order.
      */
     fun getResultTypeCounts(): Map<Class<out JobResult>, Int> {
         val aggregated = mutableMapOf<Class<out JobResult>, Int>()
@@ -119,6 +123,21 @@ class JobResultTracker : JobResultListener {
         }
         val sorted = java.util.TreeMap<Class<out JobResult>, Int>(compareBy { it.name })
         sorted.putAll(aggregated)
+        return java.util.Collections.unmodifiableMap(sorted)
+    }
+
+    /**
+     * Returns an immutable snapshot of recorded result counts keyed by result type
+     * for a single job. The snapshot is sorted by result type name so its
+     * iteration order remains deterministic regardless of the underlying concurrent
+     * map traversal order.
+     */
+    fun getResultTypeCounts(jobId: String): Map<Class<out JobResult>, Int> {
+        val counts = resultTypeCountsByJob[jobId] ?: return emptyMap()
+        val sorted = java.util.TreeMap<Class<out JobResult>, Int>(compareBy { it.name })
+        counts.forEach { (resultType, count) ->
+            sorted[resultType] = count.get()
+        }
         return java.util.Collections.unmodifiableMap(sorted)
     }
 
