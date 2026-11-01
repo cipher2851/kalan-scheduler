@@ -176,4 +176,15 @@ class JobResultTracker : JobResultListener {
             .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
             .firstOrNull()
             ?.key
+
+    /**
+     * Returns the most frequently recorded result type for [jobId], or null when
+     * no results have been recorded for that job. Ties are broken by the result
+     * type name.
+     */
+    fun getMostCommonResultType(jobId: String): Class<out JobResult>? =
+        getResultTypeCounts(jobId).entries
+            .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
+            .firstOrNull()
+            ?.key
 }
