@@ -116,6 +116,7 @@ class JobResultTracker : JobResultListener {
             "successes" to getTotalSuccessCount(),
             "failures" to getTotalFailureCount(),
             "overallFailureRate" to getOverallFailureRate(),
+            "overallSuccessRate" to getOverallSuccessRate(),
             "mostCommonResultType" to (getMostCommonResultType()?.name ?: "NONE")
         )
     }
@@ -160,8 +161,8 @@ class JobResultTracker : JobResultListener {
     /**
      * Returns an immutable snapshot of recorded result counts keyed by result type
      * for a single job. The snapshot is sorted by result type name so its
-     * iteration order remains deterministic regardless of the underlying concurrent
-     * map traversal order.
+     * iteration order remains deterministic regardless of the underlying
+     * concurrent map traversal order.
      */
     fun getResultTypeCounts(jobId: String): Map<Class<out JobResult>, Int> {
         val counts = resultTypeCountsByJob[jobId] ?: return emptyMap()
