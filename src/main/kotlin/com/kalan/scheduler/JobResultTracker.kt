@@ -70,6 +70,11 @@ class JobResultTracker : JobResultListener {
         return if (total == 0) 0.0 else getTotalFailureCount().toDouble() / total
     }
 
+    fun getOverallSuccessRate(): Double {
+        val total = getTotalExecutionCount()
+        return if (total == 0) 0.0 else getTotalSuccessCount().toDouble() / total
+    }
+
     fun getTrackedJobIds(): Set<String> =
         sortedSetOf<String>().apply {
             addAll(lastResults.keys)
