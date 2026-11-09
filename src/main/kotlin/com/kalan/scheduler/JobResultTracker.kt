@@ -96,10 +96,18 @@ class JobResultTracker : JobResultListener {
     }
 
     fun getSummary(jobId: String): Map<String, Any> {
+        val successes = getSuccessCount(jobId)
+        val failures = getFailureCount(jobId)
+        val total = successes + failures
         return mapOf(
             "jobId" to jobId,
-            "successes" to getSuccessCount(jobId),
-            "failures" to getFailureCount(jobId),
+            "total" to total,
+            "successfulExecutions" to successes,
+            "successes" to successes,
+            "failedExecutions" to failures,
+            "failures" to failures,
+            "successRate" to getSuccessRate(jobId),
+            "failureRate" to getFailureRate(jobId),
             "lastResult" to (getLastResult(jobId) ?: "NONE"),
             "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE")
         )
@@ -111,13 +119,16 @@ class JobResultTracker : JobResultListener {
      * rate, and the most frequently recorded result type (or null when empty).
      */
     fun getOverallSummary(): Map<String, Any> {
+        val successes = getTotalSuccessCount()
+        val failures = getTotalFailureCount()
+        val total = successes + failures
         return mapOf(
             "trackedJobs" to getTrackedJobIds().size,
-            "totalExecutions" to getTotalExecutionCount(),
-            "successes" to getTotalSuccessCount(),
-            "failures" to getTotalFailureCount(),
-            "overallFailureRate" to getOverallFailureRate(),
+            "totalExecutions" to total,
+            "successes" to successes,
+            "failures" to failures,
             "overallSuccessRate" to getOverallSuccessRate(),
+            "overallFailureRate" to getOverallFailureRate(),
             "mostCommonResultType" to (getMostCommonResultType()?.name ?: "NONE")
         )
     }
