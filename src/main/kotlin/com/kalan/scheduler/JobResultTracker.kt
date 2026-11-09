@@ -100,7 +100,8 @@ class JobResultTracker : JobResultListener {
             "jobId" to jobId,
             "successes" to getSuccessCount(jobId),
             "failures" to getFailureCount(jobId),
-            "lastResult" to (getLastResult(jobId) ?: "NONE")
+            "lastResult" to (getLastResult(jobId) ?: "NONE"),
+            "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE")
         )
     }
 
