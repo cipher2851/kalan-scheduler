@@ -207,4 +207,56 @@ class JobResultTracker : JobResultListener {
             .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
             .firstOrNull()
             ?.key
+
+    /**
+     * Returns an aggregate health summary for all tracked jobs. Jobs with at least
+     * [failureThreshold] recorded failures are considered unhealthy.
+     */
+    fun getHealthSummary(failureThreshold: Int = 3): Map<String, Any> {
+        val trackedJobIds = getTrackedJobIds()
+        val unhealthyJobIds = getUnhealthyJobs(failureThreshold).toSet()
+        val healthyJobIds = trackedJobIds - unhealthyJobIds
+        return mapOf(
+            "trackedJobs" to trackedJobIds.size,
+            "healthyJobs" to healthyJobIds.size,
+            "unhealthyJobs" to unhealthyJobIds.size,
+            "healthyJobIds" to healthyJobIds.sorted(),
+            "unhealthyJobIds" to unhealthyJobIds.sorted(),
+            "healthRate" to if (trackedJobIds.isEmpty()) 1.0 else healthyJobIds.size.toDouble() / trackedJobIds.size,
+            "failureThreshold" to failureThreshold
+        )
+    }
+
+    /**
+     * Returns a health summary for a single tracked job. The job is considered
+     * healthy when its recorded failure count is below [failureThreshold].
+     */
+    fun getJobHealthSummary(jobId: String, failureThreshold: Int = 3): Map<String, Any> {
+        val successes = getSuccessCount(jobId)
+        val failures = getFailureCount(jobId)
+        val total = successes + failures
+        val healthy = failures < failureThreshold
+        return mapOf(
+            "jobId" to jobId,
+            "healthy" to healthy,
+            "isHealthy" to healthy,
+            "healthStatus" to if (healthy) "HEALTHY" else "UNHEALTHY",
+            "successes" to successes,
+            "failures" to failures,
+            "total" to total,
+            "successRate" to getSuccessRate(jobId),
+            "failureRate" to getFailureRate(jobId),
+            "lastResult" to (getLastResult(jobId) ?: "NONE"),
+            "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE"),
+            "resultTypeCounts" to getResultTypeCounts(jobId),
+            "failureThreshold" to failureThreshold
+        )
+    }
+
+    /**
+     * Alias for [getJobHealthSummary], matching the aggregate naming style used
+     * by the audit log and health check manager.
+     */
+    fun getHealthSummary(jobId: String, failureThreshold: Int = 3): Map<String, Any> =
+        getJobHealthSummary(jobId, failureThreshold)
 }

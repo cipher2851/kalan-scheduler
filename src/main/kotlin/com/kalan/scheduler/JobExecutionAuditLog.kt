@@ -218,6 +218,84 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
 
     fun getOverallSummary(): Map<String, Any> = getOverallAuditSummary()
 
+    /**
+     * Returns a health-oriented summary for a single job based on its recorded
+     * audit entries. Jobs with no recorded entries are considered healthy.
+     */
+    fun getJobHealthSummary(jobId: String, failureThreshold: Double = 0.5): Map<String, Any> {
+        val entries = getEntriesForJob(jobId)
+        val total = entries.size
+        val failures = entries.count { it.result is JobResult.Failure }
+        val failureRate = if (total == 0) 0.0 else failures.toDouble() / total
+        val healthy = total == 0 || failureRate <= failureThreshold
+        return mapOf(
+            "jobId" to jobId,
+            "totalExecutionsInWindow" to total,
+            "failures" to failures,
+            "failureRate" to failureRate,
+            "healthy" to healthy,
+            "isHealthy" to healthy,
+            "healthStatus" to if (healthy) "HEALTHY" else "UNHEALTHY",
+            "failureThreshold" to failureThreshold,
+            "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE"),
+            "resultTypeCounts" to getResultTypeCounts(jobId)
+        )
+    }
+
+    /**
+     * Returns an aggregate health summary across all jobs represented in the
+     * audit log. A job is healthy when its recorded failure rate does not exceed
+     * [failureThreshold].
+     */
+    fun getOverallHealthSummary(failureThreshold: Double = 0.5): Map<String, Any> {
+        val entries = logs.toList()
+        val jobIds = entries.map { it.jobId }.distinct()
+        val healthyJobs = jobIds.count { jobId ->
+            val jobEntries = getEntriesForJob(jobId)
+            val total = jobEntries.size
+            val failures = jobEntries.count { it.result is JobResult.Failure }
+            val failureRate = if (total == 0) 0.0 else failures.toDouble() / total
+            total == 0 || failureRate <= failureThreshold
+        }
+        val unhealthyJobs = jobIds.size - healthyJobs
+        return mapOf(
+            "totalJobs" to jobIds.size,
+            "healthyJobs" to healthyJobs,
+            "unhealthyJobs" to unhealthyJobs,
+            "healthyJobIds" to jobIds.filter { jobId ->
+                val jobEntries = getEntriesForJob(jobId)
+                val total = jobEntries.size
+                val failures = jobEntries.count { it.result is JobResult.Failure }
+                val failureRate = if (total == 0) 0.0 else failures.toDouble() / total
+                total == 0 || failureRate <= failureThreshold
+            }.sorted(),
+            "unhealthyJobIds" to jobIds.filter { jobId ->
+                val jobEntries = getEntriesForJob(jobId)
+                val total = jobEntries.size
+                val failures = jobEntries.count { it.result is JobResult.Failure }
+                val failureRate = if (total == 0) 0.0 else failures.toDouble() / total
+                total > 0 && failureRate > failureThreshold
+            }.sorted(),
+            "healthRate" to if (jobIds.isEmpty()) 1.0 else healthyJobs.toDouble() / jobIds.size,
+            "failureThreshold" to failureThreshold,
+            "totalExecutionsInWindow" to entries.size,
+            "totalProcessed" to totalProcessed.get()
+        )
+    }
+
+    /**
+     * Alias for [getJobHealthSummary], matching the aggregate naming style used
+     * by other summary APIs.
+     */
+    fun getHealthSummary(jobId: String, failureThreshold: Double = 0.5): Map<String, Any> =
+        getJobHealthSummary(jobId, failureThreshold)
+
+    /**
+     * Alias for [getOverallHealthSummary].
+     */
+    fun getHealthSummary(failureThreshold: Double = 0.5): Map<String, Any> =
+        getOverallHealthSummary(failureThreshold)
+
     fun clear() {
         logs.clear()
         totalProcessed.set(0)

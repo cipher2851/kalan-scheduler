@@ -104,6 +104,53 @@ class JobHealthCheckManager(
     }
 
     fun getUnhealthyJobs(): Set<String> = unhealthyJobs.toSet()
+
+    /**
+     * Returns a detailed health summary for a single job. Jobs that have not been
+     * registered with the scheduler are reported as absent.
+     */
+    fun getJobHealthSummary(jobId: String): Map<String, Any> {
+        val job = scheduler.getJobInfo(jobId)
+        val health = getHealthStatus(jobId)
+        val isHealthy = health == JobHealth.HEALTHY
+        if (job == null) {
+            return mapOf(
+                "jobId" to jobId,
+                "exists" to false,
+                "health" to health,
+                "healthStatus" to health,
+                "isHealthy" to isHealthy,
+                "healthy" to isHealthy
+            )
+        }
+        val stats = job.getStatistics()
+        return mapOf(
+            "jobId" to jobId,
+            "exists" to true,
+            "health" to health,
+            "healthStatus" to health,
+            "isHealthy" to isHealthy,
+            "healthy" to isHealthy,
+            "jobStatus" to job.getJobStatus(),
+            "totalAttempts" to stats.totalAttempts,
+            "failureRate" to stats.failureRate,
+            "failureThreshold" to failureThreshold,
+            "minAttemptsForHealthCheck" to minAttemptsForHealthCheck
+        )
+    }
+
+    /**
+     * Returns detailed health summaries for all jobs currently known to the
+     * scheduler.
+     */
+    fun getHealthSummaries(): List<Map<String, Any>> =
+        scheduler.listAllJobs().map { getJobHealthSummary(it.id) }
+
+    /**
+     * Alias for [getJobHealthSummary], matching the aggregate naming style used
+     * by other summary APIs.
+     */
+    fun getHealthSummary(jobId: String): Map<String, Any> = getJobHealthSummary(jobId)
 }
 
 /**
