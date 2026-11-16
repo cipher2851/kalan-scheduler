@@ -62,6 +62,56 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
         return logs.filter { it.jobId == jobId && resultClass.isInstance(it.result) }
     }
 
+    fun getSuccessCount(): Int = logs.count { it.result is JobResult.Success }
+
+    fun getFailureCount(): Int = logs.count { it.result is JobResult.Failure }
+
+    fun getSuccessCount(jobId: String): Int =
+        getEntriesForJob(jobId).count { it.result is JobResult.Success }
+
+    fun getFailureCount(jobId: String): Int =
+        getEntriesForJob(jobId).count { it.result is JobResult.Failure }
+
+    fun getResultTypeCount(resultClass: Class<out JobResult>): Int =
+        logs.count { resultClass.isInstance(it.result) }
+
+    fun getResultTypeCount(jobId: String, resultClass: Class<out JobResult>): Int =
+        getEntriesForJob(jobId).count { resultClass.isInstance(it.result) }
+
+    fun getResultTypeCounts(): Map<Class<out JobResult>, Int> {
+        val aggregated = mutableMapOf<Class<out JobResult>, Int>()
+        logs.forEach { entry ->
+            val resultType = entry.result::class.java
+            aggregated[resultType] = (aggregated[resultType] ?: 0) + 1
+        }
+        val sorted = java.util.TreeMap<Class<out JobResult>, Int>(compareBy { it.name })
+        sorted.putAll(aggregated)
+        return java.util.Collections.unmodifiableMap(sorted)
+    }
+
+    fun getResultTypeCounts(jobId: String): Map<Class<out JobResult>, Int> {
+        val aggregated = mutableMapOf<Class<out JobResult>, Int>()
+        getEntriesForJob(jobId).forEach { entry ->
+            val resultType = entry.result::class.java
+            aggregated[resultType] = (aggregated[resultType] ?: 0) + 1
+        }
+        val sorted = java.util.TreeMap<Class<out JobResult>, Int>(compareBy { it.name })
+        sorted.putAll(aggregated)
+        return java.util.Collections.unmodifiableMap(sorted)
+    }
+
+    fun getMostCommonResultType(): Class<out JobResult>? =
+        getResultTypeCounts().entries
+            .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
+            .firstOrNull()
+            ?.key
+
+    fun getMostCommonResultType(jobId: String): Class<out JobResult>? =
+        getResultTypeCounts(jobId).entries
+            .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
+            .firstOrNull()
+            ?.key
+
     fun getTotalExecutionTimeMs(): Long {
         return logs.sumOf { it.durationMs }
     }

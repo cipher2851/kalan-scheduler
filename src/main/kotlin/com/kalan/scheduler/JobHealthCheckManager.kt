@@ -75,6 +75,31 @@ class JobHealthCheckManager(
         healthListeners.forEach { it.onHealthChange(job.id, health) }
     }
 
+    fun getHealthStatus(jobId: String): JobHealth =
+        if (unhealthyJobs.contains(jobId)) JobHealth.UNHEALTHY else JobHealth.HEALTHY
+
+    fun isJobHealthy(jobId: String): Boolean = getHealthStatus(jobId) == JobHealth.HEALTHY
+
+    fun getHealthyJobs(): Set<String> {
+        val allJobIds = scheduler.listAllJobs().map { it.id }.toSet()
+        return allJobIds.filter { !unhealthyJobs.contains(it) }.toSet()
+    }
+
+    fun getHealthSummary(): Map<String, Any> {
+        val jobs = scheduler.listAllJobs()
+        val unhealthy = getUnhealthyJobs()
+        return mapOf(
+            "totalJobs" to jobs.size,
+            "healthyJobs" to (jobs.size - unhealthy.size).coerceAtLeast(0),
+            "unhealthyJobs" to unhealthy.size,
+            "unhealthyJobIds" to unhealthy.sorted(),
+            "failureThreshold" to failureThreshold,
+            "minAttemptsForHealthCheck" to minAttemptsForHealthCheck,
+            "checkIntervalMs" to checkIntervalMs,
+            "isRunning" to isRunning.get()
+        )
+    }
+
     fun getUnhealthyJobs(): Set<String> = unhealthyJobs.toSet()
 }
 
