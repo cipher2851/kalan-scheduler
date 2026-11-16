@@ -109,7 +109,8 @@ class JobResultTracker : JobResultListener {
             "successRate" to getSuccessRate(jobId),
             "failureRate" to getFailureRate(jobId),
             "lastResult" to (getLastResult(jobId) ?: "NONE"),
-            "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE")
+            "mostCommonResultType" to (getMostCommonResultType(jobId)?.name ?: "NONE"),
+            "resultTypeCounts" to getResultTypeCounts(jobId)
         )
     }
 
@@ -129,7 +130,8 @@ class JobResultTracker : JobResultListener {
             "failures" to failures,
             "overallSuccessRate" to getOverallSuccessRate(),
             "overallFailureRate" to getOverallFailureRate(),
-            "mostCommonResultType" to (getMostCommonResultType()?.name ?: "NONE")
+            "mostCommonResultType" to (getMostCommonResultType()?.name ?: "NONE"),
+            "resultTypeCounts" to getResultTypeCounts()
         )
     }
 

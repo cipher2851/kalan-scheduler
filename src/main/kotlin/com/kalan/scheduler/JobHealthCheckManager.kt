@@ -88,11 +88,14 @@ class JobHealthCheckManager(
     fun getHealthSummary(): Map<String, Any> {
         val jobs = scheduler.listAllJobs()
         val unhealthy = getUnhealthyJobs()
+        val healthy = jobs.size - unhealthy.size
         return mapOf(
             "totalJobs" to jobs.size,
-            "healthyJobs" to (jobs.size - unhealthy.size).coerceAtLeast(0),
+            "healthyJobs" to healthy.coerceAtLeast(0),
             "unhealthyJobs" to unhealthy.size,
+            "healthyJobIds" to getHealthyJobs().sorted(),
             "unhealthyJobIds" to unhealthy.sorted(),
+            "healthRate" to if (jobs.isEmpty()) 0.0 else healthy.toDouble() / jobs.size,
             "failureThreshold" to failureThreshold,
             "minAttemptsForHealthCheck" to minAttemptsForHealthCheck,
             "checkIntervalMs" to checkIntervalMs,

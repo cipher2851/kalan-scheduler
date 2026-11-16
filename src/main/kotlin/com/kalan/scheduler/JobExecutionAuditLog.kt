@@ -181,7 +181,8 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
             averageDurationMs = avgDuration,
             successRate = if (total > 0) successes.toDouble() / total else 0.0,
             failureRate = if (total > 0) failures.toDouble() / total else 0.0,
-            mostCommonResultType = mostCommonResultType
+            mostCommonResultType = mostCommonResultType,
+            resultTypeCounts = getResultTypeCounts(jobId)
         )
     }
 
@@ -210,7 +211,8 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
             "failureRate" to getOverallFailureRate(),
             "totalDurationMs" to totalDurationMs,
             "averageDurationMs" to averageDurationMs,
-            "mostCommonResultType" to (mostCommonResultType?.name ?: "NONE")
+            "mostCommonResultType" to (mostCommonResultType?.name ?: "NONE"),
+            "resultTypeCounts" to getResultTypeCounts()
         )
     }
 
@@ -239,7 +241,11 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
          * The most frequently recorded result type for this job in the current
          * log window, or null when no executions have been recorded.
          */
-        val mostCommonResultType: Class<out JobResult>? = null
+        val mostCommonResultType: Class<out JobResult>? = null,
+        /**
+         * Recorded result counts for this job, keyed by result type.
+         */
+        val resultTypeCounts: Map<Class<out JobResult>, Int> = emptyMap()
     )
 }
 
