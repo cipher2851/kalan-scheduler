@@ -31,6 +31,7 @@ class JobBatch(
         val failures = java.util.concurrent.CopyOnWriteArrayList<BatchFailure>()
         val currentJobIndex = AtomicInteger(0)
         val completed = AtomicBoolean(false)
+        val startedAt = System.currentTimeMillis()
 
         resultFuture.whenComplete { _, throwable ->
             if (throwable is CancellationException) {
@@ -47,7 +48,8 @@ class JobBatch(
 
         fun finish(result: BatchResult) {
             if (completed.compareAndSet(false, true)) {
-                resultFuture.complete(result)
+                val completedResult = result.copy(durationMs = System.currentTimeMillis() - startedAt)
+                resultFuture.complete(completedResult)
             }
         }
 
@@ -193,12 +195,55 @@ class JobBatch(
         return resultFuture
     }
 
+    fun getSummary(result: BatchResult): Map<String, Any> = result.getSummary()
+
+    companion object {
+        fun getSummary(result: BatchResult): Map<String, Any> = result.getSummary()
+        fun summarize(result: BatchResult): Map<String, Any> = result.getSummary()
+    }
+
     data class BatchResult(
         val batchId: String,
         val successfulJobs: List<String>,
         val failures: List<BatchFailure>,
-        val isSuccessful: Boolean
-    )
+        val isSuccessful: Boolean,
+        val durationMs: Long = 0L
+    ) {
+        val totalJobs: Int get() = successfulJobs.size + failures.size
+        val total: Int get() = totalJobs
+        val successCount: Int get() = successfulJobs.size
+        val successes: Int get() = successCount
+        val successfulExecutions: Int get() = successCount
+        val failureCount: Int get() = failures.size
+        val failedExecutions: Int get() = failureCount
+        val failuresCount: Int get() = failureCount
+        val failedJobIds: List<String> get() = failures.map { it.jobId }
+        val successRate: Double get() = if (totalJobs == 0) 0.0 else successCount.toDouble() / totalJobs
+        val failureRate: Double get() = if (totalJobs == 0) 0.0 else failureCount.toDouble() / totalJobs
+        val summary: Map<String, Any> get() = getSummary()
+
+        fun getSummary(): Map<String, Any> = mapOf(
+            "batchId" to batchId,
+            "totalJobs" to totalJobs,
+            "total" to totalJobs,
+            "successfulJobs" to successfulJobs,
+            "successCount" to successCount,
+            "successes" to successes,
+            "successfulExecutions" to successfulExecutions,
+            "failures" to failures,
+            "failedJobs" to failedJobIds,
+            "failureCount" to failureCount,
+            "failedExecutions" to failedExecutions,
+            "failuresCount" to failuresCount,
+            "isSuccessful" to isSuccessful,
+            "successRate" to successRate,
+            "failureRate" to failureRate,
+            "durationMs" to durationMs
+        )
+
+        fun getBatchSummary(): Map<String, Any> = getSummary()
+        fun toSummary(): Map<String, Any> = getSummary()
+    }
 
     data class BatchFailure(
         val jobId: String,
