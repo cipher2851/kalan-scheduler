@@ -76,6 +76,38 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
 
     fun getTotalProcessedCount(): Int = totalProcessed.get()
 
+    fun getSuccessRate(jobId: String): Double {
+        val entries = getEntriesForJob(jobId)
+        val total = entries.size
+        val successes = entries.count { it.result is JobResult.Success }
+        return if (total == 0) 0.0 else successes.toDouble() / total
+    }
+
+    fun getFailureRate(jobId: String): Double {
+        val entries = getEntriesForJob(jobId)
+        val total = entries.size
+        val failures = entries.count { it.result is JobResult.Failure }
+        return if (total == 0) 0.0 else failures.toDouble() / total
+    }
+
+    fun getOverallSuccessRate(): Double {
+        val entries = logs.toList()
+        val total = entries.size
+        val successes = entries.count { it.result is JobResult.Success }
+        return if (total == 0) 0.0 else successes.toDouble() / total
+    }
+
+    fun getOverallFailureRate(): Double {
+        val entries = logs.toList()
+        val total = entries.size
+        val failures = entries.count { it.result is JobResult.Failure }
+        return if (total == 0) 0.0 else failures.toDouble() / total
+    }
+
+    fun getSuccessRate(): Double = getOverallSuccessRate()
+
+    fun getFailureRate(): Double = getOverallFailureRate()
+
     /**
      * Provides a summary of audit records for a specific job within the current log window.
      */
@@ -97,9 +129,42 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
             successCount = successes,
             failureCount = failures,
             averageDurationMs = avgDuration,
+            successRate = if (total > 0) successes.toDouble() / total else 0.0,
+            failureRate = if (total > 0) failures.toDouble() / total else 0.0,
             mostCommonResultType = mostCommonResultType
         )
     }
+
+    fun getOverallAuditSummary(): Map<String, Any> {
+        val entries = logs.toList()
+        val total = entries.size
+        val successes = entries.count { it.result is JobResult.Success }
+        val failures = entries.count { it.result is JobResult.Failure }
+        val totalDurationMs = entries.sumOf { it.durationMs }
+        val averageDurationMs = if (total > 0) entries.map { it.durationMs }.average() else 0.0
+        val uniqueJobs = entries.map { it.jobId }.distinct().size
+        val mostCommonResultType = entries.groupingBy { it.result::class.java }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending { it.value }.thenBy { it.key.name })
+            .firstOrNull()
+            ?.key
+
+        return mapOf(
+            "totalExecutionsInWindow" to total,
+            "totalProcessed" to totalProcessed.get(),
+            "uniqueJobs" to uniqueJobs,
+            "successes" to successes,
+            "failures" to failures,
+            "successRate" to getOverallSuccessRate(),
+            "failureRate" to getOverallFailureRate(),
+            "totalDurationMs" to totalDurationMs,
+            "averageDurationMs" to averageDurationMs,
+            "mostCommonResultType" to (mostCommonResultType?.name ?: "NONE")
+        )
+    }
+
+    fun getOverallSummary(): Map<String, Any> = getOverallAuditSummary()
 
     fun clear() {
         logs.clear()
@@ -112,6 +177,14 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
         val successCount: Int,
         val failureCount: Int,
         val averageDurationMs: Double,
+        /**
+         * The fraction of recorded executions for this job that succeeded.
+         */
+        val successRate: Double = 0.0,
+        /**
+         * The fraction of recorded executions for this job that failed.
+         */
+        val failureRate: Double = 0.0,
         /**
          * The most frequently recorded result type for this job in the current
          * log window, or null when no executions have been recorded.
