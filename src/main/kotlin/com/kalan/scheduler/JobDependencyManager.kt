@@ -34,7 +34,9 @@ class JobDependencyManager(
         val dependencies = linkedSetOf<String>()
         depJob.dependsOn?.let { dependencies.add(it) }
         dependencies.addAll(graph.getDependencies(dependencyId))
-        return dependencies.all { isDependencySatisfied(it, visited) }
+        // Use an independent copy of the visited set for each sibling dependency so
+        // that diamond-shaped dependency graphs are not incorrectly treated as blocked.
+        return dependencies.all { isDependencySatisfied(it, visited.toMutableSet()) }
     }
 
     /**
