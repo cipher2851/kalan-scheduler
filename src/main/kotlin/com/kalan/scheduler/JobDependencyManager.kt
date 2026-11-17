@@ -40,6 +40,21 @@ class JobDependencyManager(
     }
 
     /**
+     * Returns the dependencies of [jobId] that are not yet in a completed state,
+     * including missing jobs. Useful for explaining why a job is blocked.
+     */
+    fun getUnsatisfiedDependencies(jobId: String): List<String> {
+        val job = scheduler.getJobInfo(jobId) ?: return emptyList()
+        val dependencies = linkedSetOf<String>()
+        job.dependsOn?.let { dependencies.add(it) }
+        dependencies.addAll(graph.getDependencies(jobId))
+        return dependencies.filter { dep ->
+            val depJob = scheduler.getJobInfo(dep)
+            depJob == null || depJob.status != JobStatus.COMPLETED
+        }.sorted()
+    }
+
+    /**
      * Registers a new dependency and validates that it doesn't create a cycle.
      * @throws IllegalArgumentException if a circular dependency is detected.
      */
@@ -47,7 +62,35 @@ class JobDependencyManager(
         if (graph.wouldCreateCycle(jobId, dependsOnId)) {
             throw IllegalArgumentException("Circular dependency detected: $jobId -> $dependsOnId")
         }
+        // Also guard against cycles introduced through job-level dependsOn links.
+        if (wouldCreateCombinedCycle(jobId, dependsOnId)) {
+            throw IllegalArgumentException("Circular dependency detected: $jobId -> $dependsOnId")
+        }
         graph.addDependency(jobId, dependsOnId)
+    }
+
+    private fun wouldCreateCombinedCycle(jobId: String, dependsOnId: String): Boolean {
+        if (jobId == dependsOnId) return true
+        // Treat the proposed edge as present and check reachability.
+        val visited = mutableSetOf<String>()
+        fun canReach(start: String, target: String): Boolean {
+            if (start == target) return true
+            if (!visited.add(start)) return false
+            val neighbors = combinedDependencies(start).toMutableSet()
+            if (start == jobId) neighbors.add(dependsOnId)
+            for (neighbor in neighbors) {
+                if (canReach(neighbor, target)) return true
+            }
+            return false
+        }
+        return canReach(dependsOnId, jobId)
+    }
+
+    private fun combinedDependencies(node: String): Set<String> {
+        val result = linkedSetOf<String>()
+        scheduler.getJobInfo(node)?.dependsOn?.let { result.add(it) }
+        result.addAll(graph.getDependencies(node))
+        return result
     }
 
     fun removeJob(jobId: String) {
@@ -63,6 +106,19 @@ class JobDependencyManager(
     fun getDependencies(jobId: String): Set<String> = graph.getDependencies(jobId)
 
     fun getDependents(jobId: String): Set<String> = graph.getDependents(jobId)
+
+    /**
+     * Returns direct dependents of [jobId], considering both registered graph
+     * edges and job-level [Job.dependsOn] links.
+     */
+    fun getDirectDependents(jobId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        result.addAll(graph.getDependents(jobId))
+        scheduler.listAllJobs().forEach { job ->
+            if (job.dependsOn == jobId) result.add(job.id)
+        }
+        return result
+    }
 
     /**
      * Returns the ordered chain of jobs from [jobId] through its transitive
@@ -81,6 +137,95 @@ class JobDependencyManager(
 
     fun getDependencyDepth(jobId: String): Int =
         (getDependencyChain(jobId).size - 1).coerceAtLeast(0)
+
+    /**
+     * Returns all transitive dependencies of [jobId], following both job-level
+     * [Job.dependsOn] links and registered graph edges.
+     */
+    fun getTransitiveDependencies(jobId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val visited = mutableSetOf<String>()
+        val queue = ArrayDeque<String>()
+        val seed = linkedSetOf<String>()
+        scheduler.getJobInfo(jobId)?.dependsOn?.let { seed.add(it) }
+        seed.addAll(graph.getDependencies(jobId))
+        queue.addAll(seed)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (!visited.add(node)) continue
+            result.add(node)
+            val next = linkedSetOf<String>()
+            scheduler.getJobInfo(node)?.dependsOn?.let { next.add(it) }
+            next.addAll(graph.getDependencies(node))
+            next.forEach { if (it !in visited) queue.add(it) }
+        }
+        return result
+    }
+
+    /**
+     * Returns all transitive dependents of [jobId], following both job-level
+     * [Job.dependsOn] links and registered graph edges.
+     */
+    fun getTransitiveDependents(jobId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val visited = mutableSetOf(jobId)
+        val queue = ArrayDeque<String>()
+        queue.add(jobId)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val dependents = getDirectDependents(node)
+            for (dependent in dependents) {
+                if (visited.add(dependent)) {
+                    result.add(dependent)
+                    queue.add(dependent)
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Returns true when the combined dependency graph (job-level dependsOn plus
+     * registered edges) contains at least one cycle.
+     */
+    fun hasCycle(): Boolean = getTopologicalOrder() == null && scheduler.listAllJobs().isNotEmpty().not().let { false } || getTopologicalOrder() == null && hasAnyNode()
+
+    private fun hasAnyNode(): Boolean =
+        scheduler.listAllJobs().isNotEmpty() || graph.getAllNodes().isNotEmpty()
+
+    /**
+     * Returns a topological ordering of all known jobs where dependencies come
+     * before their dependents, or null when a cycle exists.
+     */
+    fun getTopologicalOrder(): List<String>? {
+        val nodes = (scheduler.listAllJobs().map { it.id } + graph.getAllNodes()).toSet()
+        if (nodes.isEmpty()) return emptyList()
+        val depsOf = LinkedHashMap<String, Set<String>>()
+        for (node in nodes) {
+            val direct = linkedSetOf<String>()
+            scheduler.getJobInfo(node)?.dependsOn?.let { if (it in nodes) direct.add(it) }
+            direct.addAll(graph.getDependencies(node).filter { it in nodes })
+            depsOf[node] = direct
+        }
+        val dependentsOf = nodes.associateWith { mutableSetOf<String>() }.toMutableMap()
+        for (node in nodes) {
+            for (dep in depsOf[node]!!) {
+                dependentsOf[dep]?.add(node)
+            }
+        }
+        val inDegree = nodes.associateWith { depsOf[it]!!.size }.toMutableMap()
+        val queue = ArrayDeque(nodes.filter { inDegree[it] == 0 }.sorted())
+        val result = mutableListOf<String>()
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            result.add(node)
+            for (dependent in dependentsOf[node]?.sorted() ?: emptyList()) {
+                inDegree[dependent] = inDegree[dependent]!! - 1
+                if (inDegree[dependent] == 0) queue.add(dependent)
+            }
+        }
+        return if (result.size == nodes.size) result else null
+    }
 
     fun getReadyJobs(): List<String> =
         scheduler.listAllJobs().map { it.id }.filter { isReady(it) }.sorted()
@@ -102,10 +247,14 @@ class JobDependencyManager(
                 "dependsOn" to "NONE",
                 "dependencies" to emptyList<String>(),
                 "dependencyCount" to 0,
+                "unsatisfiedDependencies" to emptyList<String>(),
+                "unsatisfiedDependencyCount" to 0,
+                "transitiveDependencies" to emptyList<String>(),
+                "transitiveDependents" to emptyList<String>(),
                 "dependencyChain" to emptyList<String>(),
                 "dependencyDepth" to 0,
                 "dependencyStatus" to "NONE",
-                "hasCycle" to graph.hasCycle(),
+                "hasCycle" to hasCycle(),
                 "dependents" to emptyList<String>()
             )
         }
@@ -122,10 +271,14 @@ class JobDependencyManager(
             "dependencyCount" to dependencies.size,
             "isReady" to ready,
             "ready" to ready,
+            "unsatisfiedDependencies" to getUnsatisfiedDependencies(jobId),
+            "unsatisfiedDependencyCount" to getUnsatisfiedDependencies(jobId).size,
+            "transitiveDependencies" to getTransitiveDependencies(jobId).sorted(),
+            "transitiveDependents" to getTransitiveDependents(jobId).sorted(),
             "dependencyChain" to chain,
             "dependencyDepth" to (chain.size - 1).coerceAtLeast(0),
             "dependencyStatus" to dependencyStatus,
-            "hasCycle" to graph.hasCycle(),
+            "hasCycle" to hasCycle(),
             "dependents" to getDependents(jobId).sorted()
         )
     }
@@ -138,6 +291,7 @@ class JobDependencyManager(
         val jobIds = jobs.map { it.id }
         val jobsWithDependencies = jobs.filter { it.dependsOn != null || graph.getDependencies(it.id).isNotEmpty() }
         val rootJobs = jobs.filter { it.dependsOn == null && graph.getDependencies(it.id).isEmpty() }
+        val leafJobs = jobs.filter { getDirectDependents(it.id).isEmpty() }
         val readyJobs = jobIds.filter { isReady(it) }
         val blockedJobs = jobIds.filter { !isReady(it) }
         val maxDepth = jobs.map { getDependencyDepth(it.id) }.maxOrNull() ?: 0
@@ -148,12 +302,15 @@ class JobDependencyManager(
             "dependencyEdges" to graph.getEdgeCount(),
             "rootJobs" to rootJobs.size,
             "rootJobIds" to rootJobs.map { it.id }.sorted(),
+            "leafJobs" to leafJobs.size,
+            "leafJobIds" to leafJobs.map { it.id }.sorted(),
             "readyJobs" to readyJobs.size,
             "readyJobIds" to readyJobs.sorted(),
             "blockedJobs" to blockedJobs.size,
             "blockedJobIds" to blockedJobs.sorted(),
             "maxDependencyDepth" to maxDepth,
-            "hasCycle" to graph.hasCycle(),
+            "hasCycle" to hasCycle(),
+            "topologicalOrder" to (getTopologicalOrder() ?: emptyList<String>()),
             "graphSummary" to graph.getSummary()
         )
     }
