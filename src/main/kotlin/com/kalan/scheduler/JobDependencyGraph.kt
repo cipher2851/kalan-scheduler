@@ -46,7 +46,10 @@ class JobDependencyGraph {
 
     fun getEdgeCount(): Int = adj.values.sumOf { it.size }
 
-    fun getNodeCount(): Int = adj.size
+    private fun allNodes(): Set<String> =
+        (adj.keys + adj.values.flatten()).toSet()
+
+    fun getNodeCount(): Int = allNodes().size
 
     /**
      * Returns true when the dependency graph currently contains at least one cycle.
@@ -80,8 +83,10 @@ class JobDependencyGraph {
         "nodes" to getNodeCount(),
         "edges" to getEdgeCount(),
         "hasCycle" to hasCycle(),
-        "nodeIds" to adj.keys.toList().sorted(),
-        "adjacency" to adj.mapValues { it.value.toList().sorted() }
+        "nodeIds" to allNodes().sorted(),
+        "adjacency" to allNodes().sorted().associateWith { node ->
+            adj[node]?.toList()?.sorted() ?: emptyList()
+        }
     )
 
     fun clear() {

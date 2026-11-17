@@ -18,10 +18,12 @@ class JobDependencyManager(
      */
     fun isReady(jobId: String): Boolean {
         val job = scheduler.getJobInfo(jobId) ?: return false
-        val dependsOn = job.dependsOn ?: return true
+        val dependencies = linkedSetOf<String>()
+        job.dependsOn?.let { dependencies.add(it) }
+        dependencies.addAll(graph.getDependencies(jobId))
 
-        // A job is ready only when its (transitive) dependency chain has completed.
-        return isDependencySatisfied(dependsOn, mutableSetOf())
+        if (dependencies.isEmpty()) return true
+        return dependencies.all { isDependencySatisfied(it, mutableSetOf()) }
     }
 
     private fun isDependencySatisfied(dependencyId: String, visited: MutableSet<String>): Boolean {
@@ -29,8 +31,10 @@ class JobDependencyManager(
         val depJob = scheduler.getJobInfo(dependencyId) ?: return false
         if (depJob.status != JobStatus.COMPLETED) return false
 
-        val nextDependency = depJob.dependsOn
-        return nextDependency == null || isDependencySatisfied(nextDependency, visited)
+        val dependencies = linkedSetOf<String>()
+        depJob.dependsOn?.let { dependencies.add(it) }
+        dependencies.addAll(graph.getDependencies(dependencyId))
+        return dependencies.all { isDependencySatisfied(it, visited) }
     }
 
     /**
@@ -94,6 +98,8 @@ class JobDependencyManager(
                 "isReady" to false,
                 "ready" to false,
                 "dependsOn" to "NONE",
+                "dependencies" to emptyList<String>(),
+                "dependencyCount" to 0,
                 "dependencyChain" to emptyList<String>(),
                 "dependencyDepth" to 0,
                 "dependencyStatus" to "NONE",
@@ -102,6 +108,7 @@ class JobDependencyManager(
             )
         }
         val dependsOn = job.dependsOn
+        val dependencies = (listOfNotNull(dependsOn) + graph.getDependencies(jobId).toList()).distinct().sorted()
         val chain = getDependencyChain(jobId)
         val ready = isReady(jobId)
         val dependencyStatus = dependsOn?.let { scheduler.getJobInfo(it)?.status?.name } ?: "NONE"
@@ -109,6 +116,8 @@ class JobDependencyManager(
             "jobId" to jobId,
             "exists" to true,
             "dependsOn" to (dependsOn ?: "NONE"),
+            "dependencies" to dependencies,
+            "dependencyCount" to dependencies.size,
             "isReady" to ready,
             "ready" to ready,
             "dependencyChain" to chain,
@@ -125,8 +134,8 @@ class JobDependencyManager(
     fun getDependencySummary(): Map<String, Any> {
         val jobs = scheduler.listAllJobs()
         val jobIds = jobs.map { it.id }
-        val jobsWithDependencies = jobs.filter { it.dependsOn != null }
-        val rootJobs = jobs.filter { it.dependsOn == null }
+        val jobsWithDependencies = jobs.filter { it.dependsOn != null || graph.getDependencies(it.id).isNotEmpty() }
+        val rootJobs = jobs.filter { it.dependsOn == null && graph.getDependencies(it.id).isEmpty() }
         val readyJobs = jobIds.filter { isReady(it) }
         val blockedJobs = jobIds.filter { !isReady(it) }
         val maxDepth = jobs.map { getDependencyDepth(it.id) }.maxOrNull() ?: 0
@@ -134,7 +143,7 @@ class JobDependencyManager(
             "totalJobs" to jobs.size,
             "total" to jobs.size,
             "jobsWithDependencies" to jobsWithDependencies.size,
-            "dependencyEdges" to jobsWithDependencies.size,
+            "dependencyEdges" to graph.getEdgeCount(),
             "rootJobs" to rootJobs.size,
             "rootJobIds" to rootJobs.map { it.id }.sorted(),
             "readyJobs" to readyJobs.size,
