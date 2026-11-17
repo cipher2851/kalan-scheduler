@@ -38,6 +38,52 @@ class JobDependencyGraph {
         return false
     }
 
+    fun getDependencies(jobId: String): Set<String> =
+        adj[jobId]?.toSet() ?: emptySet()
+
+    fun getDependents(jobId: String): Set<String> =
+        adj.filterValues { jobId in it }.keys.toSet()
+
+    fun getEdgeCount(): Int = adj.values.sumOf { it.size }
+
+    fun getNodeCount(): Int = adj.size
+
+    /**
+     * Returns true when the dependency graph currently contains at least one cycle.
+     */
+    fun hasCycle(): Boolean {
+        val visited = mutableSetOf<String>()
+        val recursionStack = mutableSetOf<String>()
+
+        fun depthFirstSearch(node: String): Boolean {
+            if (node in recursionStack) return true
+            if (node in visited) return false
+            visited.add(node)
+            recursionStack.add(node)
+            for (neighbor in adj[node] ?: emptySet<String>()) {
+                if (depthFirstSearch(neighbor)) return true
+            }
+            recursionStack.remove(node)
+            return false
+        }
+
+        for (node in adj.keys.toList()) {
+            if (depthFirstSearch(node)) return true
+        }
+        return false
+    }
+
+    /**
+     * Returns a deterministic summary of the dependency graph's structure.
+     */
+    fun getSummary(): Map<String, Any> = mapOf(
+        "nodes" to getNodeCount(),
+        "edges" to getEdgeCount(),
+        "hasCycle" to hasCycle(),
+        "nodeIds" to adj.keys.toList().sorted(),
+        "adjacency" to adj.mapValues { it.value.toList().sorted() }
+    )
+
     fun clear() {
         adj.clear()
     }
