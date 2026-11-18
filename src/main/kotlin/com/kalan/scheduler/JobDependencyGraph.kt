@@ -60,7 +60,7 @@ class JobDependencyGraph {
      */
     fun getTransitiveDependencies(jobId: String): Set<String> {
         val result = mutableSetOf<String>()
-        val visited = mutableSetOf<String>()
+        val visited = mutableSetOf(jobId)
         fun collect(node: String) {
             for (dep in getDependencies(node)) {
                 if (visited.add(dep)) {

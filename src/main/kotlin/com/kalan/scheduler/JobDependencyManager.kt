@@ -144,7 +144,7 @@ class JobDependencyManager(
      */
     fun getTransitiveDependencies(jobId: String): Set<String> {
         val result = mutableSetOf<String>()
-        val visited = mutableSetOf<String>()
+        val visited = mutableSetOf(jobId)
         val queue = ArrayDeque<String>()
         val seed = linkedSetOf<String>()
         scheduler.getJobInfo(jobId)?.dependsOn?.let { seed.add(it) }
@@ -188,7 +188,7 @@ class JobDependencyManager(
      * Returns true when the combined dependency graph (job-level dependsOn plus
      * registered edges) contains at least one cycle.
      */
-    fun hasCycle(): Boolean = getTopologicalOrder() == null && scheduler.listAllJobs().isNotEmpty().not().let { false } || getTopologicalOrder() == null && hasAnyNode()
+    fun hasCycle(): Boolean = hasAnyNode() && getTopologicalOrder() == null
 
     private fun hasAnyNode(): Boolean =
         scheduler.listAllJobs().isNotEmpty() || graph.getAllNodes().isNotEmpty()
