@@ -130,7 +130,10 @@ class JobDependencyManager(
         var current: String? = jobId
         while (current != null && seen.add(current)) {
             chain.add(current)
-            current = scheduler.getJobInfo(current)?.dependsOn
+            val next = linkedSetOf<String>()
+            scheduler.getJobInfo(current)?.dependsOn?.let { next.add(it) }
+            next.addAll(graph.getDependencies(current))
+            current = next.sorted().firstOrNull()
         }
         return chain
     }
