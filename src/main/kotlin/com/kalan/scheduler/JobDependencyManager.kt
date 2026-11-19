@@ -41,17 +41,31 @@ class JobDependencyManager(
 
     /**
      * Returns the dependencies of [jobId] that are not yet in a completed state,
-     * including missing jobs. Useful for explaining why a job is blocked.
+     * including missing jobs. Transitive dependencies are included so that the
+     * result explains blocked jobs even when an intermediate dependency itself
+     * has already completed. Useful for explaining why a job is blocked.
      */
     fun getUnsatisfiedDependencies(jobId: String): List<String> {
         val job = scheduler.getJobInfo(jobId) ?: return emptyList()
-        val dependencies = linkedSetOf<String>()
-        job.dependsOn?.let { dependencies.add(it) }
-        dependencies.addAll(graph.getDependencies(jobId))
-        return dependencies.filter { dep ->
-            val depJob = scheduler.getJobInfo(dep)
-            depJob == null || depJob.status != JobStatus.COMPLETED
-        }.sorted()
+        val unsatisfied = linkedSetOf<String>()
+        val visited = mutableSetOf<String>()
+
+        fun collect(node: String) {
+            if (!visited.add(node)) return
+            val dependencies = linkedSetOf<String>()
+            scheduler.getJobInfo(node)?.dependsOn?.let { dependencies.add(it) }
+            dependencies.addAll(graph.getDependencies(node))
+            for (dependency in dependencies) {
+                val dependencyJob = scheduler.getJobInfo(dependency)
+                if (dependencyJob == null || dependencyJob.status != JobStatus.COMPLETED) {
+                    unsatisfied.add(dependency)
+                }
+                collect(dependency)
+            }
+        }
+
+        collect(jobId)
+        return unsatisfied.sorted()
     }
 
     /**
