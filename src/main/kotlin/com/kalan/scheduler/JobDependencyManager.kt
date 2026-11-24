@@ -87,17 +87,19 @@ class JobDependencyManager(
         if (jobId == dependsOnId) return true
         // Treat the proposed edge as present and check reachability.
         val visited = mutableSetOf<String>()
-        fun canReach(start: String, target: String): Boolean {
+        fun canReach(start: String, target: String, visited: MutableSet<String>): Boolean {
             if (start == target) return true
             if (!visited.add(start)) return false
             val neighbors = combinedDependencies(start).toMutableSet()
             if (start == jobId) neighbors.add(dependsOnId)
             for (neighbor in neighbors) {
-                if (canReach(neighbor, target)) return true
+                // Use an independent copy of the visited set for each branch so that
+                // diamond-shaped graphs are not incorrectly treated as unreachable.
+                if (canReach(neighbor, target, visited.toMutableSet())) return true
             }
             return false
         }
-        return canReach(dependsOnId, jobId)
+        return canReach(dependsOnId, jobId, visited)
     }
 
     private fun combinedDependencies(node: String): Set<String> {
