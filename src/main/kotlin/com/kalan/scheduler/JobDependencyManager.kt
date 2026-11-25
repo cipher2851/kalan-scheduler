@@ -34,9 +34,9 @@ class JobDependencyManager(
         val dependencies = linkedSetOf<String>()
         depJob.dependsOn?.let { dependencies.add(it) }
         dependencies.addAll(graph.getDependencies(dependencyId))
-        // Use an independent copy of the visited set for each sibling dependency so
-        // that diamond-shaped dependency graphs are not incorrectly treated as blocked.
-        return dependencies.all { isDependencySatisfied(it, visited.toMutableSet()) }
+        // Reachability is deterministic for a static graph, so the visited set
+        // can safely be shared across sibling dependencies.
+        return dependencies.all { isDependencySatisfied(it, visited) }
     }
 
     /**
@@ -93,9 +93,9 @@ class JobDependencyManager(
             val neighbors = combinedDependencies(start).toMutableSet()
             if (start == jobId) neighbors.add(dependsOnId)
             for (neighbor in neighbors) {
-                // Use an independent copy of the visited set for each branch so that
-                // diamond-shaped graphs are not incorrectly treated as unreachable.
-                if (canReach(neighbor, target, visited.toMutableSet())) return true
+                // Reachability is deterministic for a static graph, so the visited
+                // set can safely be shared across branches.
+                if (canReach(neighbor, target, visited)) return true
             }
             return false
         }

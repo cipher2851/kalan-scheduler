@@ -33,9 +33,9 @@ class JobDependencyGraph {
         if (!visited.add(start)) return false
         val neighbors = adj[start] ?: emptySet<String>()
         for (neighbor in neighbors) {
-            // Use an independent copy of the visited set for each branch so that
-            // diamond-shaped graphs are not incorrectly treated as unreachable.
-            if (canReach(neighbor, target, visited.toMutableSet())) return true
+            // Reachability is deterministic for a static graph, so the visited
+            // set can safely be shared across branches instead of copied.
+            if (canReach(neighbor, target, visited)) return true
         }
         return false
     }
