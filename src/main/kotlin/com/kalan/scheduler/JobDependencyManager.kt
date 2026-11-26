@@ -34,9 +34,11 @@ class JobDependencyManager(
         val dependencies = linkedSetOf<String>()
         depJob.dependsOn?.let { dependencies.add(it) }
         dependencies.addAll(graph.getDependencies(dependencyId))
-        // Reachability is deterministic for a static graph, so the visited set
-        // can safely be shared across sibling dependencies.
-        return dependencies.all { isDependencySatisfied(it, visited) }
+        // Each sibling dependency must be evaluated with its own copy of the
+        // visited set. Sharing one set across siblings can mark a node as visited
+        // after it succeeded in another branch and incorrectly make a later
+        // sibling appear unsatisfied.
+        return dependencies.all { isDependencySatisfied(it, HashSet(visited)) }
     }
 
     /**
