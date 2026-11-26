@@ -33,9 +33,9 @@ class JobDependencyGraph {
         if (!visited.add(start)) return false
         val neighbors = adj[start] ?: emptySet<String>()
         for (neighbor in neighbors) {
-            // Reachability is deterministic for a static graph, so the visited
-            // set can safely be shared across branches instead of copied.
-            if (canReach(neighbor, target, visited)) return true
+            // Evaluate each branch with its own visited set so that a node skipped
+            // in one branch does not incorrectly affect another branch.
+            if (canReach(neighbor, target, HashSet(visited))) return true
         }
         return false
     }

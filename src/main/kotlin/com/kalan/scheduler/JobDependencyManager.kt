@@ -92,12 +92,10 @@ class JobDependencyManager(
         fun canReach(start: String, target: String, visited: MutableSet<String>): Boolean {
             if (start == target) return true
             if (!visited.add(start)) return false
-            val neighbors = combinedDependencies(start).toMutableSet()
-            if (start == jobId) neighbors.add(dependsOnId)
-            for (neighbor in neighbors) {
-                // Reachability is deterministic for a static graph, so the visited
-                // set can safely be shared across branches.
-                if (canReach(neighbor, target, visited)) return true
+            for (neighbor in combinedDependencies(start)) {
+                // Evaluate each branch with its own visited set so that a node
+                // skipped in one branch does not incorrectly affect another.
+                if (canReach(neighbor, target, HashSet(visited))) return true
             }
             return false
         }
