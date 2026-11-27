@@ -87,19 +87,17 @@ class JobDependencyManager(
 
     private fun wouldCreateCombinedCycle(jobId: String, dependsOnId: String): Boolean {
         if (jobId == dependsOnId) return true
-        // Treat the proposed edge as present and check reachability.
-        val visited = mutableSetOf<String>()
-        fun canReach(start: String, target: String, visited: MutableSet<String>): Boolean {
-            if (start == target) return true
-            if (!visited.add(start)) return false
-            for (neighbor in combinedDependencies(start)) {
-                // Evaluate each branch with its own visited set so that a node
-                // skipped in one branch does not incorrectly affect another.
-                if (canReach(neighbor, target, HashSet(visited))) return true
+        val visited = mutableSetOf(dependsOnId)
+        val stack = ArrayDeque<String>()
+        stack.add(dependsOnId)
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            for (neighbor in combinedDependencies(node)) {
+                if (neighbor == jobId) return true
+                if (visited.add(neighbor)) stack.add(neighbor)
             }
-            return false
         }
-        return canReach(dependsOnId, jobId, visited)
+        return false
     }
 
     private fun combinedDependencies(node: String): Set<String> {
