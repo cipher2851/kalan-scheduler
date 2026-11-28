@@ -334,5 +334,10 @@ class JobDependencyManager(
 
     fun getSummary(): Map<String, Any> = getDependencySummary()
 
+    /**
+     * Alias for [getJobDependencySummary].
+     */
+    fun getSummary(jobId: String): Map<String, Any> = getJobDependencySummary(jobId)
+
     fun getJobSummary(jobId: String): Map<String, Any> = getJobDependencySummary(jobId)
 }

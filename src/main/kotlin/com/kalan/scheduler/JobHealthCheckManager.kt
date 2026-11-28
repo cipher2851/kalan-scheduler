@@ -51,6 +51,11 @@ class JobHealthCheckManager(
         unhealthyJobs.clear()
     }
 
+    /**
+     * Returns whether the health check manager is currently running.
+     */
+    fun isRunning(): Boolean = isRunning.get()
+
     private fun checkAllJobsHealth() {
         val jobs = scheduler.listAllJobs()
         jobs.forEach {
@@ -145,6 +150,17 @@ class JobHealthCheckManager(
      */
     fun getHealthSummaries(): List<Map<String, Any>> =
         scheduler.listAllJobs().map { getJobHealthSummary(it.id) }
+
+    /**
+     * Alias for [getHealthSummary], matching the aggregate naming style used by
+     * other summary APIs.
+     */
+    fun getSummary(): Map<String, Any> = getHealthSummary()
+
+    /**
+     * Alias for [getJobHealthSummary].
+     */
+    fun getSummary(jobId: String): Map<String, Any> = getJobHealthSummary(jobId)
 
     /**
      * Alias for [getJobHealthSummary], matching the aggregate naming style used

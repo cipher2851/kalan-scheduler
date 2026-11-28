@@ -55,7 +55,13 @@ class PersistentJobRepository(private val storageFile: File) : JobRepository {
             val metadata = job.metadata.entries.joinToString(",") { "${it.key}=${it.value}" }
             "${job.id}|${job.priority.value}|$tags|$metadata"
         }
-        storageFile.writeText(content)
+        val temporaryFile = File(storageFile.parentFile ?: File("."), "${storageFile.name}.tmp")
+        temporaryFile.writeText(content)
+        if (storageFile.exists()) storageFile.delete()
+        if (!temporaryFile.renameTo(storageFile)) {
+            storageFile.writeText(content)
+            temporaryFile.delete()
+        }
     }
 
     fun load(factory: JobFactory) = synchronized(lock) {

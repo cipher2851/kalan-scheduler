@@ -219,6 +219,11 @@ class JobExecutionAuditLog(private val maxLogSize: Int = 1000) {
     fun getOverallSummary(): Map<String, Any> = getOverallAuditSummary()
 
     /**
+     * Alias for [getOverallAuditSummary].
+     */
+    fun getSummary(): Map<String, Any> = getOverallAuditSummary()
+
+    /**
      * Returns a health-oriented summary for a single job based on its recorded
      * audit entries. Jobs with no recorded entries are considered healthy.
      */

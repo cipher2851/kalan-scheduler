@@ -136,6 +136,11 @@ class JobResultTracker : JobResultListener {
     }
 
     /**
+     * Alias for [getOverallSummary].
+     */
+    fun getSummary(): Map<String, Any> = getOverallSummary()
+
+    /**
      * Returns the number of recorded results whose runtime type is assignable to
      * [resultClass], including subclasses of the requested result type.
      */
